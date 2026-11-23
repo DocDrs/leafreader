@@ -73,13 +73,9 @@ class Patch102UiTest {
   }
   val before=wire.calls.size;val position=vm.store.position(book.id)
   compose.onNodeWithTag("offline-management").performScrollTo().performClick()
-  compose.waitUntil(10000){compose.onAllNodesWithText("核验与下载操作").fetchSemanticsNodes().isNotEmpty()}
-  compose.onNodeWithText("核验与下载操作").performClick()
-  compose.waitUntil(10000){compose.onAllNodesWithTag("download-status-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("已下载")}}
-  compose.onNodeWithTag("verify-download-${book.id}").performClick()
-  compose.waitUntil(10000){compose.onAllNodesWithTag("download-check-result-${book.id}").fetchSemanticsNodes().isNotEmpty()}
+  compose.waitUntil(10000){compose.onAllNodesWithTag("hidden-clear-${book.id}").fetchSemanticsNodes().isNotEmpty()}
   assertEquals(before,wire.calls.size);assertNull(runtime.request(runtime.key(book.sourceId,book.id)))
-  compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
+  compose.onNodeWithTag("hidden-clear-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
   compose.waitUntil(10000){runtime.cache(book.sourceId).status(book.id).saved==0}
   assertEquals(position,vm.store.position(book.id));assertEquals(before,wire.calls.size)
  }

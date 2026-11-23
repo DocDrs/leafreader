@@ -119,7 +119,7 @@ class Patch101UiTest {
     @Test fun verifiedMenuDetectsCorruptionAndClearUpdatesItWithoutLosingProgressOrSendingRequests() {
         setup();val book=seedComplete();compose.runOnIdle{fixture.network.online=false;vm.store.save(book.id,"saved",51)}
         val saved=vm.store.position(book.id);menu(book)
-        await{compose.onAllNodesWithText("下载状态：已下载").fetchSemanticsNodes().isNotEmpty()}
+        await{compose.onAllNodesWithText("已下载").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("shelf-menu-directory-${book.id}").assertDoesNotExist();compose.onNodeWithText("目录").assertDoesNotExist()
         compose.onNodeWithTag("download-copy-${book.id}").assertTextContains("5/5",substring=true)
         val before=requests.size
@@ -128,11 +128,11 @@ class Patch101UiTest {
             val file=File(root,sha("a".toByteArray())+".bin");val raw=file.readBytes();file.writeBytes(raw.apply{this[0]=(this[0].toInt() xor 1).toByte()})
         }
         compose.onNodeWithTag("verify-download-${book.id}").performClick()
-        await{compose.onAllNodesWithText("本机核验完成：部分离线").fetchSemanticsNodes().isNotEmpty()}
+        await{compose.onAllNodesWithText("部分离线").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("download-book-${book.id}").assertIsDisplayed();assertEquals(before,requests.size)
         compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
-        await{compose.onAllNodesWithText("下载状态：已取消").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("下载状态：未下载").fetchSemanticsNodes().isNotEmpty()}
-        await{compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("没有完整离线副本")}}
+        await{compose.onAllNodesWithText("已取消").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("未下载").fetchSemanticsNodes().isNotEmpty()}
+        await{compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("本机暂无完整副本")}}
         compose.runOnIdle{assertEquals(saved,vm.store.position(book.id));assertEquals(3,vm.ui.value.shelfBooks.size);assertFalse(runtime.cache(book.sourceId).status(book.id,true).complete)}
     }
     @Test fun queueRunningFailureCancelAndCompletionAreLiveAndCompletionNeedsActualResources() {
@@ -141,10 +141,10 @@ class Patch101UiTest {
         compose.onNodeWithTag("cancel-download-${book.id}").performClick();await{vm.downloadTaskLabel(book)=="已取消"}
         compose.runOnIdle{vm.download(book)};await{runtime.busy(book.sourceId,book.id)}
         val r=runtime.request(runtime.key(book.sourceId,book.id))!!
-        compose.runOnIdle{runtime.update(r,"RUNNING","测试处理中")};await{compose.onAllNodesWithText("下载状态：下载中 · 测试处理中").fetchSemanticsNodes().isNotEmpty()}
-        compose.runOnIdle{runtime.update(r,"FAILED","测试网络中断")};await{compose.onAllNodesWithText("下载状态：下载失败 · 测试网络中断").fetchSemanticsNodes().isNotEmpty()}
-        compose.runOnIdle{runtime.update(r,"COMPLETE","整本已下载")};await{compose.onAllNodesWithText("下载状态：未下载").fetchSemanticsNodes().isNotEmpty()}
-        seedComplete();await{compose.onAllNodesWithText("下载状态：已下载").fetchSemanticsNodes().isNotEmpty()}
+        compose.runOnIdle{runtime.update(r,"RUNNING","测试处理中")};await{compose.onAllNodesWithText("下载中").fetchSemanticsNodes().isNotEmpty()}
+        compose.runOnIdle{runtime.update(r,"FAILED","测试网络中断")};await{compose.onAllNodesWithText("下载失败").fetchSemanticsNodes().isNotEmpty()}
+        compose.runOnIdle{runtime.update(r,"COMPLETE","整本已下载")};await{compose.onAllNodesWithText("未下载").fetchSemanticsNodes().isNotEmpty()}
+        seedComplete();await{compose.onAllNodesWithText("已下载").fetchSemanticsNodes().isNotEmpty()}
         compose.runOnIdle{
             val dialog=org.robolectric.shadows.ShadowDialog.getLatestDialog();val view=dialog.window!!.decorView
             val bitmap=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888);view.draw(Canvas(bitmap));File("build/patch101-previews/03-download-menu.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()

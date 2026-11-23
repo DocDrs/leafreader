@@ -66,6 +66,45 @@ class OfflineStore(private val root:File,val owner:String,private val freeSpace:
         }
         journal.delete()
     }
+    /** Totals use stat only; resource bytes are never read or hashed for the Settings overview. */
+    fun totalDiskBytes():Long=synchronized(lock) {
+        if(!owner()) {
+            if(root.exists() && root.walkTopDown().any{it.isFile})throw IOException("离线内容身份无法确认，未显示占用统计")
+            return@synchronized 0L
+        }
+        var total=0L
+        Files.walk(root.toPath()).use {stream->stream.forEach {path->
+            try {
+                val attr=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes::class.java,java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if(attr.isRegularFile)total=Math.addExact(total,attr.size().coerceAtLeast(0))
+            }catch(_:java.nio.file.NoSuchFileException){/* Concurrent temporary file completion. */}
+        }}
+        total
+    }
+    /** Focused cleanup inventory: only explicitly hidden book directories, stat only. */
+    fun diskUsageForBooks(ids:Set<String>):OfflineDiskUsage=synchronized(lock) {
+        if(!owner()) {
+            if(root.exists() && root.walkTopDown().any{it.isFile})throw IOException("离线内容身份无法确认，未列出清理项目")
+            return@synchronized OfflineDiskUsage()
+        }
+        val bytes=mutableMapOf<String,Long>();val payload=mutableSetOf<String>();var total=0L
+        for(id in ids) {
+            val dir=book(id).toPath()
+            if(!Files.isDirectory(dir,java.nio.file.LinkOption.NOFOLLOW_LINKS))continue
+            var size=0L
+            Files.walk(dir).use{stream->stream.forEach{path->
+                try {
+                    val attr=Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes::class.java,java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    if(attr.isRegularFile) {
+                        size=Math.addExact(size,attr.size().coerceAtLeast(0))
+                        if(path.fileName.toString() !in setOf("epoch","cancel-journal.json"))payload+=id
+                    }
+                }catch(_:java.nio.file.NoSuchFileException){/* Concurrent temporary file completion. */}
+            }}
+            bytes[id]=size;total=Math.addExact(total,size)
+        }
+        OfflineDiskUsage(total,bytes,payloadBooks=payload)
+    }
     /** Logical file sizes in this exact owner directory; never traverse another owner or follow links. */
     fun diskUsage(knownIds:Set<String> = emptySet()):OfflineDiskUsage=synchronized(lock) {
         if(!owner()) {

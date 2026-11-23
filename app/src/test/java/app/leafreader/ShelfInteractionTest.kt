@@ -69,7 +69,7 @@ class ShelfInteractionTest {
     @Test fun accessibleMenuUpdatesAfterCancelAndClosesOnAccountSwitchWithSameBookId() {
         setup();val a=vm.ui.value.shelfBooks.single()
         fun menu(target:Book=a)=compose.onNode(SemanticsMatcher.expectValue(SavedBookIdentity,target.key)).performSemanticsAction(SemanticsActions.OnLongClick){it()}
-        menu();compose.onNodeWithTag("download-book-${a.id}").performClick()
+        menu();compose.waitUntil(10000){compose.onAllNodesWithTag("download-book-${a.id}").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("download-book-${a.id}").performClick()
         compose.onNodeWithText("加入下载队列").performClick()
         menu();compose.onNodeWithTag("cancel-download-${a.id}").assertIsDisplayed().performClick()
         compose.waitUntil(15000){compose.waitForIdle();runtime.request(runtime.key(a.sourceId,a.id))?.state=="CANCELLED"}
@@ -80,7 +80,7 @@ class ShelfInteractionTest {
         compose.onNodeWithTag("shelf-book-actions").assertDoesNotExist()
         val b=vm.ui.value.shelfBooks.single{it.sourceId==vm.store.sourceId};assertEquals(a.id,b.id);assertNotEquals(a.sourceId,b.sourceId)
         compose.onNodeWithTag("tab-shelf").performClick()
-        menu(b);compose.onNodeWithTag("download-book-${b.id}").performClick();compose.onNodeWithText("加入下载队列").performClick()
+        menu(b);compose.waitUntil(10000){compose.onAllNodesWithTag("download-book-${b.id}").fetchSemanticsNodes().isNotEmpty()};compose.onNodeWithTag("download-book-${b.id}").performClick();compose.onNodeWithText("加入下载队列").performClick()
         compose.runOnIdle{assertEquals("CANCELLED",runtime.request(runtime.key(a.sourceId,a.id))!!.state);assertEquals("QUEUED",runtime.request(runtime.key(b.sourceId,b.id))!!.state);assertNull(vm.store.position(b.id))}
         compose.runOnIdle{vm.signOut()};compose.onNodeWithTag("shelf-book-actions").assertDoesNotExist()
     }

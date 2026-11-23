@@ -38,6 +38,7 @@ class OfflineControlsTest {
         compose.runOnIdle{vm.store.save(book.id,"preserved-chapter",23)};val position=vm.store.position(book.id)
         compose.onNodeWithTag("download-book-${book.id}").assertDoesNotExist()
         compose.onNodeWithTag("shelf-book-${book.id}").performTouchInput { longClick() }
+        compose.waitUntil(10000){compose.onAllNodesWithTag("download-book-${book.id}").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("download-book-${book.id}").performScrollTo().performClick()
         compose.onNodeWithTag("download-wifi").assertIsSelected();compose.onNodeWithTag("download-metered").assertIsNotSelected().performClick()
         compose.onNodeWithText("加入下载队列").performClick()

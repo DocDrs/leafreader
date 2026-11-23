@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag as coverSemanticsTag
 import androidx.compose.ui.text.font.FontFamily
@@ -105,7 +106,9 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
     var directoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var menu by rememberSaveable { mutableStateOf(false) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
-    var offlineManager by rememberSaveable { mutableStateOf(false) }
+    var hiddenCleaner by rememberSaveable { mutableStateOf(false) }
+    val offlineEnabled=vm.offlineSourceEnabled()
+    var hiddenClearTarget by remember(state.connectionRevision,offlineEnabled){mutableStateOf<Book?>(null)}
     var sourceInfo by rememberSaveable { mutableStateOf(false) }
     var downloadId by rememberSaveable { mutableStateOf<String?>(null) }
     var clearDownloadId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -129,16 +132,10 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
     LaunchedEffect(addedFeedback){addedFeedback?.let{snackbar.showSnackbar(it);addedFeedback=null}}
     var shelfActionId by remember(state.connectionRevision, state.topTab, reading) { mutableStateOf<String?>(null) }
     val offlineRevision by OfflineEvents.revision.collectAsStateWithLifecycle()
-    var managementLoading by remember{mutableStateOf(false)}
-    var managementError by remember{mutableStateOf(false)}
-    var managementReload by remember{mutableIntStateOf(0)}
-    var managementSnapshot by remember(state.connectionRevision){mutableStateOf(OfflineManagementSnapshot())}
-    val managedBooks=managementSnapshot.books
-    LaunchedEffect(state.connectionRevision,offlineRevision,state.shelfRevision,managementReload,offlineManager) {
-        managementLoading=true;managementError=false
-        try{delay(150);managementSnapshot=vm.managementSnapshot()}catch(e:CancellationException){throw e}catch(_:Exception){managementError=true}finally{managementLoading=false}
+    LaunchedEffect(state.connectionRevision,offlineEnabled,state.topTab,reading) {
+        if(!offlineEnabled || state.topTab!="settings" || reading){hiddenCleaner=false;hiddenClearTarget=null}
     }
-    val allBooks = (state.shelfBooks + state.books + managedBooks).distinctBy { it.key }
+    val allBooks = (state.shelfBooks + state.books).distinctBy { it.key }
     val detail = allBooks.find { it.key == detailId }
     val directory = allBooks.find { it.key == directoryId }
     val read: (Book, String?) -> Unit = { book, chapter -> detailId = null; directoryId = null; sheet = null; menu = false; vm.open(book, chapter) }
@@ -161,7 +158,7 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
                     }
                 }) { padding ->
                 when(state.topTab) {
-                    "settings" -> HomeSettings(state,vm,Modifier.padding(padding),settingsScrollState,{offlineManager=true}) { sourceInfo = true }
+                    "settings" -> HomeSettings(state,vm,Modifier.padding(padding),settingsScrollState,{hiddenCleaner=true}) { sourceInfo = true }
                     "find" -> FindBooks(state, vm, Modifier.padding(padding), findListState, findSearch, {findSearch=it;vm.clearSearch()}, { detailId = it.key }, { read(it, null) }, { directoryId = it.key }, {if(vm.addToShelf(it))addedFeedback="已加入书架"})
                     else -> Shelf(state, vm, Modifier.padding(padding), shelfListState, { read(it, null) }, { shelfActionId = it.key },
                         managing,selected.map{it.key}.toSet(),
@@ -178,30 +175,7 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
         }
     }
     if (sheet == "settings") ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Cream) { ReaderControls(state.settings, vm::settings) }
-    if(offlineManager)AlertDialog(onDismissRequest={offlineManager=false},title={Text("本机离线副本与任务")},text={
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max=440.dp)) {
-            item{
-                Text("仅当前服务与账号，包含已从本机书架隐藏的书。清除副本保留书架、进度和登录。",fontSize=12.sp)
-                if(managementSnapshot.available) {
-                    Text("离线副本总占用："+OfflineUsageFormatting.bytes(managementSnapshot.totalBytes),fontWeight=FontWeight.SemiBold,modifier=Modifier.testTag("offline-total-bytes"))
-                    Text("文件大小快照：包括各版本、部分下载、仅阅读缓存、临时文件和副本元数据。不含独立封面缩略图、安装包、进度／设置记录、其他账号及文件系统分配开销；下载中会变化。",fontSize=11.sp)
-                    if(managementSnapshot.otherBytes>0)Text("其他元数据／未识别缓存："+OfflineUsageFormatting.bytes(managementSnapshot.otherBytes),fontSize=11.sp,modifier=Modifier.testTag("offline-other-bytes"))
-                } else if(!managementLoading && !managementError)Text("请登录对应账号后查看占用；当前未统计不代表副本已删除。",fontSize=12.sp)
-                TextButton(onClick={managementReload++},enabled=!managementLoading){Text("刷新本机占用")}
-            }
-            items(managedBooks,key={it.key}){b->Column(Modifier.padding(vertical=8.dp)) {
-                Text(b.title,fontWeight=FontWeight.SemiBold)
-                Text("占用："+OfflineUsageFormatting.bytes(managementSnapshot.bytesByBook[b.key]?:0L),fontSize=12.sp,modifier=Modifier.testTag("offline-book-bytes-${b.id}"))
-                var copy by remember(b.key){mutableStateOf<OfflineStatus?>(null)}
-                LaunchedEffect(b.key,offlineRevision){try{copy=vm.inspectDownload(b)}catch(e:CancellationException){throw e}catch(_:Exception){}}
-                Text(vm.downloadTaskLabel(b)?:copy?.label?:"正在核验",fontSize=12.sp)
-                TextButton(onClick={offlineManager=false;shelfActionId=b.key}){Text("核验与下载操作")}
-            }}
-            if(managementLoading)item{Text("正在读取本机副本与任务…")}
-            else if(managementError)item{Text("本机占用统计失败；原文件和记录保留，已有数值为上次快照。");TextButton(onClick={managementReload++}){Text("重试读取本机状态")}}
-            else if(managedBooks.isEmpty())item{Text("没有当前账号的本机副本或任务。")}
-        }
-    },confirmButton={TextButton(onClick={offlineManager=false}){Text("关闭")}})
+    if(hiddenCleaner && offlineEnabled)HiddenCopyCleaner(state,vm,{hiddenCleaner=false}) { hiddenClearTarget=it }
     if (sourceInfo) SourceConnectionDialog(state, vm.ownOrigin(), { vm.cancelConnection(); sourceInfo = false }, vm::connect, vm::signOut, vm::clearRemoteForServerSelection)
     allBooks.firstOrNull { it.key == shelfActionId }?.let { book ->
         ShelfBookActions(book,state,vm,
@@ -213,7 +187,7 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
     }
     allBooks.firstOrNull{it.key==downloadId}?.let { book->
         var metered by remember(book.key){mutableStateOf(false)}
-        AlertDialog(onDismissRequest={downloadId=null},title={Text("下载整本")},text={Column(Modifier.heightIn(max=360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())){
+        AlertDialog(onDismissRequest={downloadId=null},title={Text("下载整本")},text={Column(Modifier.heightIn(max=minOf(360.dp,androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp*.5f)).verticalScroll(rememberScrollState())){
             Text(book.title)
             Text("默认只在不计费 Wi-Fi 下下载。任务由系统后台安排，已校验内容可在中断后继续使用。",fontSize=13.sp,modifier=Modifier.padding(vertical=12.dp))
             DownloadNetworkChoice(metered){metered=it}
@@ -224,7 +198,7 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
         var metered by remember(keys){mutableStateOf(false)}
         val revision=state.connectionRevision
         AlertDialog(onDismissRequest={batchDownloadKeys=null},modifier=Modifier.testTag("batch-download-dialog"),title={Text("批量下载")},
-            text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())) {
+            text={Column(Modifier.heightIn(max=minOf(360.dp,androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp*.5f)).verticalScroll(rememberScrollState())) {
                 Text("选中 ${keys.size} 本，当前账号可下载 ${targets.size} 本。已有完整下载或在途任务会跳过。",fontSize=14.sp)
                 Text(targets.joinToString("、"){it.title},fontSize=12.sp,color=Muted,maxLines=4,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(vertical=12.dp))
                 DownloadNetworkChoice(metered){metered=it}
@@ -234,15 +208,20 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
     removeKeys?.let { keys ->
         val targets=state.shelfBooks.filter{it.key in keys};val revision=state.connectionRevision
         AlertDialog(onDismissRequest={removeKeys=null},modifier=Modifier.testTag("remove-shelf-confirm"),title={Text("从本机书架移出 ${targets.size} 本？")},
-            text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())) {
+            text={Column(Modifier.heightIn(max=minOf(360.dp,androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp*.5f)).verticalScroll(rememberScrollState())) {
                 Text(targets.joinToString("、"){it.title},fontSize=14.sp,modifier=Modifier.padding(bottom=12.dp))
                 Text("仅隐藏栖页本机书架中的这些书。不修改 BookHub 远端书架、不删除原书，阅读进度和离线下载都会保留。可在找书重新加入并继续阅读。",fontSize=14.sp,lineHeight=22.sp)
             }},confirmButton={TextButton(enabled=targets.isNotEmpty(),onClick={vm.removeFromShelf(keys.toSet(),revision);removeKeys=null},modifier=Modifier.testTag("confirm-remove-shelf")){Text("仅从本机移出")}},
             dismissButton={TextButton(onClick={removeKeys=null}){Text("取消")}})
     }
-    allBooks.firstOrNull{it.key==clearDownloadId}?.let { book->
-        AlertDialog(onDismissRequest={clearDownloadId=null},title={Text("清除下载")},text={Text("只清除此账号这本书的离线内容副本。书架、阅读进度和登录会保留。")},
-            confirmButton={TextButton(onClick={vm.clearDownload(book);clearDownloadId=null}){Text("清除副本")}},dismissButton={TextButton(onClick={clearDownloadId=null}){Text("取消")}})
+    (hiddenClearTarget ?: allBooks.firstOrNull{it.key==clearDownloadId})?.let { book->
+        val hidden=hiddenClearTarget!=null
+        val revision=state.connectionRevision
+        val close={hiddenClearTarget=null;clearDownloadId=null}
+        AlertDialog(onDismissRequest=close,title={Text("清除下载")},text={Column(Modifier.heightIn(max=androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp*.5f).verticalScroll(rememberScrollState())) {
+            Text(book.title,modifier=Modifier.padding(bottom=12.dp))
+            Text(if(hidden)"只清除当前启用账号这本已移出书架的书的离线副本，并取消其下载任务。隐藏状态、阅读进度和登录保留，不影响其他账号。" else "只清除此账号这本书的离线内容副本。书架、阅读进度和登录会保留。")
+        }},confirmButton={TextButton(onClick={if(hidden)vm.clearHiddenDownload(book,revision) else vm.clearDownload(book);close()}){Text("清除副本")}},dismissButton={TextButton(onClick=close){Text("取消")}})
     }
     if (state.notice != null) AlertDialog(onDismissRequest = vm::dismissNotice, text = { Text(state.notice!!) },
         confirmButton = { TextButton(onClick = vm::dismissNotice) { Text("知道了") } })
@@ -335,6 +314,16 @@ private fun ShelfCover(book:Book,image:android.graphics.Bitmap?) {
 
 @Composable
 private fun HomeSettings(state:ReaderState,vm:ReaderViewModel,modifier:Modifier,scroll:androidx.compose.foundation.ScrollState,downloads:()->Unit,source:()->Unit) {
+    val revision by OfflineEvents.revision.collectAsStateWithLifecycle()
+    val enabled=vm.offlineSourceEnabled()
+    var reload by remember{mutableIntStateOf(0)}
+    var loading by remember(state.connectionRevision,enabled){mutableStateOf(false)}
+    var error by remember(state.connectionRevision,enabled){mutableStateOf(false)}
+    var usage by remember(state.connectionRevision,enabled){mutableStateOf(OfflineManagementSnapshot())}
+    LaunchedEffect(state.connectionRevision,enabled,revision,reload) {
+        loading=true;error=false
+        try{delay(250);usage=vm.offlineUsage()}catch(e:CancellationException){throw e}catch(_:Exception){error=true}finally{loading=false}
+    }
     Column(modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal=24.dp).testTag("settings-page")) {
         Text("设置",fontSize=26.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=18.dp,bottom=28.dp))
         Text("书源与账号",fontSize=12.sp,color=Muted)
@@ -350,11 +339,48 @@ private fun HomeSettings(state:ReaderState,vm:ReaderViewModel,modifier:Modifier,
             Switch(checked=state.automaticWifi,onCheckedChange=vm::automaticWifi,modifier=Modifier.testTag("automatic-wifi").semantics{contentDescription="新加入书籍自动下载"})
         }
         Text("仅在不计费 Wi-Fi 下后台排队；不会补下载升级前的整个书架。关闭会取消未完成的自动任务，已保存内容保留。",fontSize=12.sp,lineHeight=20.sp,color=Muted,modifier=Modifier.padding(top=6.dp))
-        TextButton(onClick=downloads,modifier=Modifier.testTag("offline-management")){Text("管理离线副本与失败任务")}
+        if(usage.available) {
+            Text("离线副本总占用："+OfflineUsageFormatting.bytes(usage.totalBytes),fontSize=15.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=18.dp).testTag("offline-total-bytes"))
+            Text("仅当前启用服务与账号的文件大小快照：含各版本、部分下载、阅读缓存、临时文件及副本元数据；不含封面缩图、安装包、进度／设置、其他账号及文件系统开销。",fontSize=11.sp,lineHeight=18.sp,color=Muted)
+        } else if(!loading && !error)Text("请登录当前来源后查看占用；未统计不代表副本已删除。",fontSize=12.sp,color=Muted,modifier=Modifier.padding(top=18.dp))
+        if(error)Text("本机占用暂无法统计，文件与进度保留；已有数值为上次快照。",fontSize=12.sp,color=Muted)
+        TextButton(onClick={reload++},enabled=!loading,modifier=Modifier.testTag("offline-refresh-usage")){Text(if(loading)"正在统计本机占用…" else "刷新本机占用")}
+        TextButton(onClick=downloads,enabled=enabled,modifier=Modifier.testTag("offline-management")){Text("清理已移出书架的副本")}
+        Text("只列当前启用账号中已主动移出的项目，不必重新加入书架。",fontSize=12.sp,color=Muted)
         Text("阅读未保存章节仍会按需联网并保存。下载整本、取消或清除副本，请长按书架中的书籍。",fontSize=12.sp,lineHeight=20.sp,color=Muted,modifier=Modifier.padding(top=14.dp,bottom=28.dp))
     }
 }
 
+@Composable
+private fun HiddenCopyCleaner(state:ReaderState,vm:ReaderViewModel,dismiss:()->Unit,clear:(Book)->Unit) {
+    val revision by OfflineEvents.revision.collectAsStateWithLifecycle()
+    var reload by remember{mutableIntStateOf(0)}
+    var loading by remember(state.connectionRevision){mutableStateOf(true)}
+    var error by remember(state.connectionRevision){mutableStateOf(false)}
+    var snapshot by remember(state.connectionRevision){mutableStateOf(OfflineManagementSnapshot())}
+    LaunchedEffect(state.connectionRevision,revision,state.shelfRevision,reload) {
+        loading=true;error=false
+        try{delay(150);snapshot=vm.hiddenCopiesSnapshot()}catch(e:CancellationException){throw e}catch(_:Exception){error=true}finally{loading=false}
+    }
+    AlertDialog(onDismissRequest=dismiss,modifier=Modifier.testTag("hidden-copy-cleaner"),title={Text("清理已移出书架的副本")},text={
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max=440.dp).testTag("hidden-copy-list")) {
+            item {Text("仅当前启用服务与账号中已主动移出的书。按文件大小列出，不逐本校验正文；清除会单独确认，隐藏状态和进度保留。",fontSize=12.sp,lineHeight=20.sp)}
+            items(snapshot.books,key={it.key}){book->
+                Column(Modifier.fillMaxWidth().padding(vertical=8.dp)) {
+                    Text(book.title,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text("占用："+OfflineUsageFormatting.bytes(snapshot.bytesByBook[book.key]?:0L),fontSize=12.sp,modifier=Modifier.testTag("offline-book-bytes-${book.id}"))
+                    vm.downloadTaskLabel(book)?.let{Text(it,fontSize=12.sp,color=Muted)}
+                    TextButton(onClick={clear(book)},enabled=!loading && !error,modifier=Modifier.testTag("hidden-clear-${book.id}")){Text("清除副本…")}
+                }
+            }
+            if(loading)item{Text("正在读取已移出项目的本机占用…",fontSize=12.sp)}
+            else if(error)item{Text("读取失败，原文件与进度保留；已有项目为上次快照。",fontSize=12.sp);TextButton(onClick={reload++}){Text("重试")}}
+            else if(snapshot.books.isEmpty())item{Text("没有当前账号已移出书架的副本或待取消任务。",fontSize=12.sp,modifier=Modifier.testTag("hidden-copy-empty"))}
+        }
+    },confirmButton={TextButton(onClick=dismiss){Text("关闭")}})
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShelfBookActions(book:Book,state:ReaderState,vm:ReaderViewModel,
     dismiss:()->Unit,remove:()->Unit,download:()->Unit,cancel:()->Unit,clear:()->Unit) {
@@ -363,25 +389,105 @@ private fun ShelfBookActions(book:Book,state:ReaderState,vm:ReaderViewModel,
     var recheck by remember(book.key){mutableIntStateOf(0)}
     var inspectionError by remember(book.key){mutableStateOf(false)}
     val copy by produceState<OfflineStatus?>(null,book.key,state.connectionRevision,contentRevision,recheck) {
-        value=null;inspectionError=false;kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){delay(180)}
+        value=null;inspectionError=false;delay(180)
         try {value=vm.inspectDownload(book)}catch(e:CancellationException){throw e}catch(_:Exception){inspectionError=true}
     }
     val task=vm.downloadTaskLabel(book)
     val content=copy?.let{if(it.complete)"已下载" else if(it.saved>0)"部分离线" else "未下载"}
-    AlertDialog(onDismissRequest=dismiss,modifier=Modifier.testTag("shelf-book-actions"),
-        title={Text(book.title,maxLines=3,overflow=TextOverflow.Ellipsis)},
-        text={Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())) {
-            Text("下载状态：${task?:content?:if(inspectionError)"核验失败" else "正在核对本机内容…"}",fontWeight=FontWeight.SemiBold,fontSize=16.sp,modifier=Modifier.testTag("download-status-${book.id}"))
-            Text(when{inspectionError->"本机内容暂无法核验，可重试；进度和文件保留。";copy==null->"正在校验当前版本的本地资源。";copy!!.complete->"离线副本完整，已校验 ${copy!!.saved}/${copy!!.total} 份资源。";copy!!.saved>0->"已校验 ${copy!!.saved}/${copy!!.total} 份资源，尚未确认整本完整下载。";else->"没有完整离线副本；排队不代表已下载。"},fontSize=12.sp,lineHeight=19.sp,color=Muted,modifier=Modifier.padding(top=8.dp,bottom=8.dp).testTag("download-copy-${book.id}"))
-            if(recheck>0 && copy!=null)Text("本机核验完成：${content}",fontSize=12.sp,color=Muted,modifier=Modifier.testTag("download-check-result-${book.id}"))
-            if(vm.canManageOffline(book)) {
-                if(busy)TextButton(onClick=cancel,modifier=Modifier.fillMaxWidth().testTag("cancel-download-${book.id}")){Text("取消下载")}
-                else if(available && copy?.complete!=true)TextButton(onClick=download,modifier=Modifier.fillMaxWidth().testTag("download-book-${book.id}")){Text("下载整本 / 重试")}
-                TextButton(onClick={recheck++},modifier=Modifier.fillMaxWidth().testTag("verify-download-${book.id}")){Text("核验本机下载")}
-                TextButton(onClick=clear,modifier=Modifier.fillMaxWidth().testTag("clear-download-${book.id}")){Text("清除下载")}
+    val headline=when {
+        copy?.complete==true->"已下载"
+        task!=null->task.substringBefore(" · ")
+        inspectionError->"核验失败"
+        copy==null->"正在核验"
+        else->content.orEmpty()
+    }
+    val integrity=when {
+        inspectionError->"原文件与进度保留，可重试核验"
+        copy==null->"正在检查本机副本"
+        copy!!.complete->"完整性已核验 · ${copy!!.saved}/${copy!!.total} 份资源"
+        copy!!.saved>0->"已核验 ${copy!!.saved}/${copy!!.total} 份资源 · 部分内容可离线"
+        else->"本机暂无完整副本"
+    }
+    val taskDetail=when {
+        task==null->null
+        copy?.complete==true && task.startsWith("下载失败")->"最近任务失败，完整副本保留"
+        copy?.complete==true->task
+        else->task.substringAfter(" · ","").takeIf{it.isNotBlank()}
+    }
+    val moss=Color(0xFF506D5C)
+    val tint=when {copy?.complete==true->moss;inspectionError || task?.startsWith("下载失败")==true->Vermilion;else->Color(0xFF6F6B61)}
+    val maxHeight=androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp*.86f
+    ModalBottomSheet(onDismissRequest=dismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
+        containerColor=HomePaper,contentColor=Ink,shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),
+        contentWindowInsets={WindowInsets.safeDrawing},
+        dragHandle={Box(Modifier.fillMaxWidth().padding(top=10.dp,bottom=6.dp),contentAlignment=Alignment.Center) {
+            Box(Modifier.size(width=32.dp,height=4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF6F6B61).copy(alpha=.28f)))
+        }},
+        modifier=Modifier.testTag("shelf-book-actions")) {
+        Column(Modifier.fillMaxWidth().heightIn(max=maxHeight).verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top=4.dp),verticalAlignment=Alignment.Top) {
+                Column(Modifier.weight(1f).padding(end=8.dp)) {
+                    Text(book.title,fontFamily=FontFamily.Serif,fontSize=22.sp,lineHeight=29.sp,fontWeight=FontWeight.SemiBold,
+                        maxLines=if(androidx.compose.ui.platform.LocalDensity.current.fontScale>=1.4f)2 else 3,
+                        overflow=TextOverflow.Ellipsis,modifier=Modifier.testTag("book-actions-title"))
+                    if(book.author.isNotBlank() && book.author!="作者未注明")Text(book.author,fontSize=12.sp,color=Color(0xFF6F6B61),maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(top=4.dp))
+                }
+                TextButton(onClick=dismiss,contentPadding=PaddingValues(horizontal=8.dp)){Text("关闭",fontSize=13.sp,color=Color(0xFF6F6B61))}
             }
-            if(vm.isOnShelf(book))TextButton(onClick=remove,modifier=Modifier.fillMaxWidth().testTag("remove-book-${book.id}")){Text("移出书架")}
-        }},confirmButton={TextButton(onClick=dismiss){Text("关闭")}})
+            Column(Modifier.padding(top=14.dp,bottom=12.dp).then(if(recheck>0)Modifier.testTag("download-check-result-${book.id}")else Modifier)
+                .semantics{liveRegion=androidx.compose.ui.semantics.LiveRegionMode.Polite}) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Canvas(Modifier.size(6.dp)){drawCircle(tint)}
+                    Text(headline,fontSize=14.sp,lineHeight=20.sp,fontWeight=FontWeight.Medium,color=tint,
+                        modifier=Modifier.padding(start=8.dp).testTag("download-status-${book.id}"))
+                }
+                Text(listOfNotNull(integrity,taskDetail).joinToString("\n"),fontSize=12.sp,lineHeight=19.sp,color=Color(0xFF6F6B61),
+                    maxLines=3,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(top=5.dp).testTag("download-copy-${book.id}"))
+            }
+            if(vm.canManageOffline(book)) {
+                if(busy)BookActionRow("取消下载",2,Modifier.testTag("cancel-download-${book.id}"),onClick=cancel,highlight=true)
+                else if(available && copy!=null && copy?.complete!=true)BookActionRow(
+                    if(task?.startsWith("下载失败")==true)"重试下载" else if(copy!!.saved>0)"继续下载" else "下载整本",0,
+                    Modifier.testTag("download-book-${book.id}"),onClick=download,highlight=true)
+                BookActionRow(if(inspectionError)"重试核验" else "核验本机下载",1,Modifier.testTag("verify-download-${book.id}"),
+                    enabled=copy!=null || inspectionError,onClick={recheck++})
+            }
+            if(vm.canManageOffline(book) || vm.isOnShelf(book)) {
+                HorizontalDivider(color=Color(0xFFE6E1D8),modifier=Modifier.padding(vertical=10.dp).testTag("book-actions-separator"))
+                if(vm.canManageOffline(book))BookActionRow("清除下载",null,Modifier.testTag("clear-download-${book.id}"),
+                    subtitle="只清副本，保留阅读进度",onClick=clear)
+                if(vm.isOnShelf(book))BookActionRow("移出书架",null,Modifier.testTag("remove-book-${book.id}"),
+                    subtitle="仅本机隐藏，保留进度与下载",onClick=remove)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookActionRow(label:String,icon:Int?,modifier:Modifier=Modifier,subtitle:String?=null,
+                          enabled:Boolean=true,highlight:Boolean=false,onClick:()->Unit) {
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+        .background(if(highlight)Color(0xFFF0ECE4)else Color.Transparent)
+        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).heightIn(min=52.dp).padding(horizontal=12.dp,vertical=12.dp),
+        verticalAlignment=Alignment.CenterVertically) {
+        val color=if(enabled)Ink else Color(0xFF6F6B61).copy(alpha=.55f)
+        if(icon!=null) {
+            Canvas(Modifier.size(22.dp)) {
+                val w=size.width;val h=size.height;val stroke=1.6.dp.toPx()
+                fun line(x1:Float,y1:Float,x2:Float,y2:Float)=drawLine(color,Offset(w*x1,h*y1),Offset(w*x2,h*y2),strokeWidth=stroke,cap=androidx.compose.ui.graphics.StrokeCap.Round)
+                when(icon) {
+                    0->{line(.5f,.12f,.5f,.62f);line(.3f,.43f,.5f,.63f);line(.7f,.43f,.5f,.63f);line(.2f,.72f,.2f,.85f);line(.2f,.85f,.8f,.85f);line(.8f,.85f,.8f,.72f)}
+                    1->{drawCircle(color,radius=w*.37f,style=androidx.compose.ui.graphics.drawscope.Stroke(stroke));line(.3f,.5f,.44f,.63f);line(.44f,.63f,.7f,.36f)}
+                    else->drawRoundRect(color,Offset(w*.26f,h*.26f),androidx.compose.ui.geometry.Size(w*.48f,h*.48f),androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(label,fontSize=16.sp,lineHeight=23.sp,color=color,fontWeight=if(highlight)FontWeight.Medium else FontWeight.Normal)
+            if(subtitle!=null)Text(subtitle,fontSize=12.sp,lineHeight=18.sp,color=Color(0xFF6F6B61),modifier=Modifier.padding(top=3.dp))
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -494,7 +600,7 @@ private fun DownloadControls(book:Book,vm:ReaderViewModel,download:(Book)->Unit,
         Text(verified?.label?:if(verifyError)"核验失败，可重试" else "正在核验本机下载",fontSize=11.sp,color=Muted,modifier=Modifier.testTag("download-status-${book.id}"))
         Row(horizontalArrangement=Arrangement.End,modifier=Modifier.fillMaxWidth()) {
             if(vm.downloadBusy(book))TextButton(onClick={vm.cancelDownload(book)}){Text("取消下载")}
-            else TextButton(onClick={download(book)},modifier=Modifier.testTag("download-book-${book.id}")){Text("下载整本 / 重试")}
+            else if(verified!=null && verified?.complete!=true)TextButton(onClick={download(book)},modifier=Modifier.testTag("download-book-${book.id}")){Text("下载整本 / 重试")}
             TextButton(onClick={recheck++}){Text("核验本机下载")}
             TextButton(onClick={clear(book)},modifier=Modifier.testTag("clear-download-${book.id}")){Text("清除下载")}
         }
