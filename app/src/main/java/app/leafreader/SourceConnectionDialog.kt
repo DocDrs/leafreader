@@ -21,11 +21,13 @@ import app.leafreader.data.*
 @Composable
 fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () -> Unit,
                            connect: (String, String, String) -> Unit, signOut: () -> Unit,
-                           ) {
-    var selected by remember { mutableStateOf(ownOrigin) }
-    var editing by remember { mutableStateOf(ownOrigin.isBlank()) }
-    var draft by remember { mutableStateOf(ownOrigin) }
-    var reviewed by remember { mutableStateOf<String?>(null) }
+                           buildOrigin: String = BookHubBuildDefaults.origin()) {
+    val initial = remember { BookHubBuildDefaults.initial(ownOrigin, buildOrigin) }
+    var usingBuildDefault by remember { mutableStateOf(ownOrigin.isBlank() && initial.isNotBlank()) }
+    var selected by remember { mutableStateOf(initial) }
+    var editing by remember { mutableStateOf(initial.isBlank()) }
+    var draft by remember { mutableStateOf(initial) }
+    var reviewed by remember { mutableStateOf<String?>(initial.takeIf { usingBuildDefault }) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var authorized by remember { mutableStateOf(false) }
@@ -59,7 +61,12 @@ fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () ->
                             editing = false; draft = selected; reviewed = null; password = ""; authorized = false
                         }) { Text("取消编辑，返回登录") }
                     } else {
-                        Text(if (selected.isBlank()) "尚未配置书源" else "目标书源已配置 · 地址已隐藏", fontSize = 14.sp)
+                        if (usingBuildDefault) {
+                            Text("编译默认书源 · 连接目标", fontSize = 14.sp)
+                            Text(selectedTarget?.uri?.let { it.host + if (it.port == -1) "" else ":${it.port}" }.orEmpty(),
+                                fontSize = 14.sp, modifier = Modifier.testTag("build-default-destination"))
+                            Text("请核对服务归属。账号密码仅发往此 HTTPS 目标；也可编辑地址使用自己的服务。", fontSize = 12.sp)
+                        } else Text(if (selected.isBlank()) "尚未配置书源" else "目标书源已配置 · 地址已隐藏", fontSize = 14.sp)
                         TextButton(onClick = {
                             editing = true; draft = selected; reviewed = null; password = ""; authorized = false
                         }, modifier = Modifier.testTag("edit-source-address"), enabled = !state.connecting) { Text("编辑书源地址") }
@@ -81,7 +88,7 @@ fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () ->
                     Spacer(Modifier.height(20.dp))
                 }
                 if (editing) Button(onClick = {
-                    selected = draft.trim(); reviewed = draftTarget?.value; password = ""; authorized = false; editing = false
+                    selected = draft.trim(); usingBuildDefault = false; reviewed = draftTarget?.value; password = ""; authorized = false; editing = false
                 }, modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp).height(50.dp).testTag("confirm-source-target"),
                     enabled = draftTarget != null && !state.connecting) { Text("确认目标，返回登录") }
                 else Button(onClick = { connect(selected, username, password); password = "" },

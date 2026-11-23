@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,8 +15,8 @@ android {
         applicationId = "app.leafreader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 107
-        versionName = "1.0.7"
+        versionCode = 108
+        versionName = "1.0.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes { getByName("release") { isDebuggable = false } }
@@ -56,3 +58,31 @@ tasks.withType<Test>().configureEach {
     dependsOn(prepareRobolectricSdk)
     systemProperty("robolectric.dependency.dir", layout.buildDirectory.dir("robolectric-sdk").get().asFile.absolutePath)
 }
+
+// Optional local compile input, never a Gradle property or checked-in default.
+// Evaluate only inside the task action; do not serialize this value in configuration/build caches.
+val bookHubDefaultSources = layout.buildDirectory.dir("generated/bookHubDefault/java")
+val generateBookHubDefault by tasks.registering {
+    outputs.dir(bookHubDefaultSources)
+    doNotTrackState("Optional local service target is generated afresh and must never enter build caches")
+    notCompatibleWithConfigurationCache("Reads optional local input only at execution")
+    doLast {
+        val raw = System.getenv("LEAFREADER_DEFAULT_BOOKHUB_ORIGIN").orEmpty().trim()
+        val origin = if (raw.isEmpty()) "" else {
+            val u = runCatching { URI(raw) }.getOrNull()
+            require(u != null && raw.length <= 2048 && u.scheme.equals("https", true) &&
+                !u.host.isNullOrBlank() && u.rawUserInfo == null && u.rawQuery == null && u.rawFragment == null &&
+                u.rawPath.orEmpty() in listOf("", "/") && u.port in -1..65535 && u.port != 0) {
+                "Optional BookHub default must be an HTTPS origin without credentials, path, query or fragment"
+            }
+            URI("https", null, u.host.lowercase(), if (u.port == 443) -1 else u.port, null, null, null).toASCIIString()
+        }
+        val literal = origin.replace("\\", "\\\\").replace("\"", "\\\"")
+        val file = bookHubDefaultSources.get().file("app/leafreader/data/CompiledBookHubDefault.java").asFile
+        file.parentFile.mkdirs()
+        file.writeText("package app.leafreader.data;\npublic final class CompiledBookHubDefault {\n" +
+            "  private CompiledBookHubDefault() {}\n  public static final String ORIGIN = \"" + literal + "\";\n}\n")
+    }
+}
+android.sourceSets.getByName("main").java.srcDir(bookHubDefaultSources)
+tasks.named("preBuild") { dependsOn(generateBookHubDefault) }

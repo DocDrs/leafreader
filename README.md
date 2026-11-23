@@ -1,4 +1,4 @@
-# 栖页 LeafReader 1.0.7
+# 栖页 LeafReader 1.0.8
 
 原生 Android 阅读器，使用 Kotlin、Jetpack Compose 和 Android 原生文字排版。支持兼容 BookHub 接口的书籍服务，不包含后端服务、公共书库、预置账号或书籍内容。
 
@@ -23,7 +23,7 @@
 
 失败切章可返回刚才的可读页，真实鉴权拒绝除外；失效章节/锚点提供目录与显式恢复。正文进度只在可靠映射时显示，估算使用 ≈。阅读目录复用、搜索异步发现上架状态、详情真封面和紧凑书架均保留。
 
-applicationId 仍为 `app.leafreader`，versionCode 为 `107`，versionName 为 `1.0.7`。存储目录、原有键与 Keystore 标识保留。公开源码构建不带私有交付证书，版本号增加并不能解决签名不匹配，详情见下方构建说明。
+applicationId 仍为 `app.leafreader`，versionCode 为 `108`，versionName 为 `1.0.8`。存储目录、原有键与 Keystore 标识保留。公开源码构建不带私有交付证书，版本号增加并不能解决签名不匹配，详情见下方构建说明。
 
 ## 功能
 
@@ -51,7 +51,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease
 ```
 
-Windows 使用 `gradlew.bat`。debug APK 由本机构建环境签名；release 默认生成未签名 APK，需要使用自己的签名流程。仓库不包含签名材料、SDK、JDK、构建缓存或安装包。从源码本地构建通常使用构建者自己的签名，不能覆盖已安装的同包名私有签名 APK（包括 1.0.1–1.0.7）。已有用户不要为试源码而卸载现有应用，可使用独立模拟器或测试机。
+Windows 使用 `gradlew.bat`。debug APK 由本机构建环境签名；release 默认生成未签名 APK，需要使用自己的签名流程。仓库不包含签名材料、SDK、JDK、构建缓存或安装包。从源码本地构建通常使用构建者自己的签名，不能覆盖已安装的同包名私有签名 APK（包括 1.0.1–1.0.8）。已有用户不要为试源码而卸载现有应用，可使用独立模拟器或测试机。
 
 Android 最低版本为 8.0/API 26，目标 API 35。测试使用 JUnit、Robolectric、Compose 测试与本地 MockWebServer；测试书名、正文、图片和身份均为合成 fixtures，`.invalid` 地址不是真实服务。测试不使用真实账号或实际书籍。`app/src/test/resources/upgrade-v06`、`upgrade-v07` 仅包含旧代码在合成资料上生成的升级夹具；`UpgradeCipher` 的可复现 AES 测试键不用于应用或设备 Keystore。独立离线权路径仅由自写、永久授权的测试文件验证，正式 App 没有新增导入入口或内置正文。测试覆盖不等于真实设备安装、硬件 Keystore、系统后台调度或真实 BookHub 服务实测。
 
@@ -70,6 +70,17 @@ Android 最低版本为 8.0/API 26，目标 API 35。测试使用 JUnit、Robole
 
 ## 1.0.7 书源地址隐私
 
-应用不内置任何 BookHub 服务地址，也不提供私有构建注入入口。首次使用请在设置中的 BookHub 配置页手填自己获授权的 HTTPS 地址。常态界面只显示连接状态；实际地址仅在主动打开的「编辑书源地址」页可见。每次新登录前核对该页目标并确认读取许可，账号密码仅发往核对过的精确 HTTPS origin，不跨域转发、不保存密码。
+1.0.7 移除了默认 BookHub 服务地址与旧注入入口；1.0.8 的可选通用编译参数见下文。首次使用请在设置中的 BookHub 配置页手填自己获授权的 HTTPS 地址。常态界面只显示连接状态；实际地址仅在主动打开的「编辑书源地址」页可见。每次新登录前核对该页目标并确认读取许可，账号密码仅发往核对过的精确 HTTPS origin，不跨域转发、不保存密码。
 
 升级保留设备中原有服务配置和加密会话，不改变书架、隐藏标记、进度、布局、离线副本与队列格式。编辑、取消或登录失败不切换旧会话。旧版仅存在于内置值而未曾保存的地址不会重新内置，须手填。源代码本地构建通常用构建者自己的签名，不能覆盖已安装的同包名私有 APK；已有用户不要为测试源码而卸载，请使用独立模拟器或测试机。
+
+
+## 1.0.8 可选本机编译默认值
+
+仓库没有真实 BookHub 服务值。无参数构建仍由使用者手填获授权 HTTPS 地址。可选环境输入名为 `LEAFREADER_DEFAULT_BOOKHUB_ORIGIN`；仅在生成任务执行时读取，不能用 Gradle 属性、版本控制文件或示例真实值传递。只接受不含凭据、路径、query 和 fragment 的 HTTPS origin；无效输入只报通用错误，不回显原值。
+
+默认值仅给没有保存服务的新安装预选目标；首次登录页明确显示其域名，需要许可确认，不自动登录。已保存的服务和可恢复会话优先，默认值不更改服务/账号身份、书架、隐藏标记、进度、下载或任务队列。用户仍可主动编辑换源；密码不保存，原有 HTTPS 核验和精确 origin、不跨域发送凭据的规则保持。
+
+带实际地址的编译必须在无 Git 的隔离临时目录运行，使用独立临时 Gradle 用户目录，传入环境变量并禁用配置/构建缓存与 Kotlin 增量编译：`--no-configuration-cache --no-build-cache -Pkotlin.incremental=false -Pkotlin.compiler.execution.strategy=in-process`。不启用 debug 日志或 Build Scan，不运行会记录实际默认值的 UI 测试，不公开生成目录、日志、报告或带值 APK，编译后清理临时区。生成任务不跟踪/缓存状态且不兼容配置缓存；真实值只应存在于隔离生成区和获授权私发的 APK。APK 中的地址可提取，编译注入不提供保密能力。公开版不设置该环境输入。
+
+不含真实默认值的完整回归覆盖空值、无效值、合成 HTTPS 默认、目标展示与许可、设备自填优先、会话恢复、隐藏书、进度与离线副本。真实服务未联网验证。源码构建使用自己的签名，不能覆盖同包名私有 APK，请使用独立测试机/模拟器，勿卸载已有用户数据。
