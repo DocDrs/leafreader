@@ -75,6 +75,11 @@ internal class BookCoverRepository(root:File,private val scope:CoroutineScope) {
         val bytes=ByteArrayOutputStream().also{image.compress(Bitmap.CompressFormat.PNG,100,it)}.toByteArray()
         runCatching{disk.put(owner,book,version,epoch,bytes,valid)} // Thumbnail failure never changes reading/download state.
     }
+    suspend fun localThumbnail(owner:String,book:String,cache:app.leafreader.offline.OfflineStore):Bitmap? {
+        val epoch=cache.generation(book);val version=disk.latest(owner,book,epoch)?:return null
+        val bytes=disk.get(owner,book,version,epoch)?:return null
+        return thumbnail(bytes).takeIf{cache.isCurrent(book,epoch)}
+    }
     fun clear(owner:String,book:String){disk.clear(owner,book);synchronized(guard){memory.snapshot().keys.filter{it.startsWith("$owner|$book|")}.forEach{memory.remove(it)};misses.keys.filter{it.startsWith("$owner|$book|")}.toList().forEach{misses.remove(it)};validated.keys.filter{it.startsWith("$owner|$book|")}.toList().forEach{validated.remove(it)};embedded.keys.filter{it.startsWith("$owner|$book|")}.toList().forEach{embedded.remove(it)}}}
     internal suspend fun thumbnail(bytes:ByteArray):Bitmap {
         if(bytes.size !in 1..8*1024*1024)protocol()

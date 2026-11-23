@@ -30,6 +30,8 @@ class BookHubLoginPolicyTest {
     private val fixture = ConfirmedBookHubEntry(ServiceOrigin("https://bookhub.fixture.invalid"), "测试服务", "fixture identity")
 
     @Test fun migrationNeverReplacesALegacyDeploymentWithANewDefault() {
+        assertEquals("https://same.fixture.invalid",ServiceOrigin("HTTPS://SAME.fixture.invalid:443/").value)
+        assertEquals("https://[::1]",ServiceOrigin("https://[::1]:443/").value)
         assertEquals(InitialBookHubTarget(true, "https://legacy.fixture.invalid"), InitialBookHubTarget.migrate("https://legacy.fixture.invalid", fixture))
         assertFalse(InitialBookHubTarget.migrate("https://bookhub.fixture.invalid/", fixture).useCustom)
         assertTrue(InitialBookHubTarget.migrate("https://legacy.fixture.invalid", null).useCustom)
@@ -132,7 +134,7 @@ class BookHubLoginPolicyTest {
         } finally { Dispatchers.resetMain() }
     }
 
-    @Test fun switchingServersClearsTheOldSessionBeforeTlsAndKeepsProgressIsolated() = runTest {
+    @Test fun switchingServersPreservesOldSessionUntilSuccessfulLoginAndKeepsProgressIsolated() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val clients = mutableListOf<BookHubClient>()
@@ -161,9 +163,9 @@ class BookHubLoginPolicyTest {
             oldStore.save("public:1", "fixture-chapter", 56)
             reject = true
             vm.connect("https://second.fixture.invalid", "fixture-user", "fixture-password")
-            assertNull(clients.first().accountId)
+            assertNotNull(clients.first().accountId)
             advanceUntilIdle()
-            assertTrue(vm.ui.value.remote) // Failed target selection keeps the previous shelf view, with its old session cleared.
+            assertTrue(vm.ui.value.remote) // Failed target selection keeps the previous session and shelf.
             assertNotNull(vm.ui.value.connectionError)
             assertEquals(1, clients.size)
             assertEquals(56, oldStore.position("public:1")!!.offset)

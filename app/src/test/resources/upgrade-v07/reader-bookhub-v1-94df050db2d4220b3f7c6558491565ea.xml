@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <int name="local-added.shelfOrder" value="3" />
+    <int name="public:1.shelfOrder" value="0" />
+    <int name="nextShelfOrder" value="5" />
+    <string name="local-added.chapter">preserved-chapter</string>
+    <long name="public:2.entered" value="1700000010000" />
+    <string name="lastBook">public:2</string>
+    <long name="local-added.time" value="1795189474028" />
+    <int name="local-added.history.preserved-chapter" value="71" />
+    <string name="public:1.chapter">txt:fc1c0e0c7ae8690b:0:459</string>
+    <long name="public:1.time" value="1795189474024" />
+    <long name="public:1.entered" value="1700000000000" />
+    <int name="public:1.history.txt:fc1c0e0c7ae8690b:0:459" value="123" />
+    <int name="bookhub-same-title.shelfOrder" value="2" />
+    <string name="recentBook">{&quot;id&quot;:&quot;public:2&quot;,&quot;title&quot;:&quot;旧版EPUB验证&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;EPUB&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;}</string>
+    <long name="public:2.time" value="1795192106515" />
+    <string name="serviceShelf">[{&quot;id&quot;:&quot;public:1&quot;,&quot;title&quot;:&quot;升级验证书&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;},{&quot;id&quot;:&quot;mountain-letter-v1&quot;,&quot;title&quot;:&quot;同ID的BookHub项目&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;},{&quot;id&quot;:&quot;bookhub-same-title&quot;,&quot;title&quot;:&quot;山海来信&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;}]</string>
+    <int name="public:2.shelfOrder" value="4" />
+    <string name="public:2.chapter">epub:f02bd07ba6f43b21:a08b17f7005d22ec</string>
+    <string name="localShelf">[{&quot;id&quot;:&quot;local-added&quot;,&quot;title&quot;:&quot;本机加入的BookHub书&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;},{&quot;id&quot;:&quot;public:2&quot;,&quot;title&quot;:&quot;旧版EPUB验证&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;EPUB&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-94df050db2d4220b3f7c6558491565ea&quot;}]</string>
+    <int name="public:1.offset" value="123" />
+    <int name="local-added.offset" value="71" />
+    <int name="public:2.offset" value="6" />
+    <int name="public:2.history.epub:f02bd07ba6f43b21:a08b17f7005d22ec" value="6" />
+    <int name="mountain-letter-v1.shelfOrder" value="1" />
+</map>

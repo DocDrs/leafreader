@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <int name="nextShelfOrder" value="1" />
+    <int name="other-account-book.offset" value="87" />
+    <long name="other-account-book.time" value="1795189474040" />
+    <string name="lastBook">other-account-book</string>
+    <string name="other-account-book.chapter">other-chapter</string>
+    <int name="other-account-book.history.other-chapter" value="87" />
+    <string name="localShelf">[{&quot;id&quot;:&quot;other-account-book&quot;,&quot;title&quot;:&quot;升级验证书&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:2,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;bookhub-v1-5f465f134644e0d3a900b358d29b5ed9&quot;}]</string>
+    <int name="other-account-book.shelfOrder" value="0" />
+</map>

@@ -23,6 +23,7 @@ internal fun atomic(file:File,bytes:ByteArray) {
         Files.move(temp.toPath(),file.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING)
     } finally { temp.delete() }
 }
+data class OfflineDiskUsage(val totalBytes:Long=0,val bytesByBook:Map<String,Long> = emptyMap(),val formats:Map<String,String> = emptyMap(),val payloadBooks:Set<String> = emptySet())
 data class OfflineStatus(val saved:Int=0,val total:Int=0,val complete:Boolean=false) {
     val label:String get()=if(complete) "整本已下载" else if(saved>0) "部分离线" else "未下载"
 }
@@ -64,6 +65,42 @@ class OfflineStore(private val root:File,val owner:String,private val freeSpace:
             atomic(File(book(id),"epoch"),to.toString().toByteArray())
         }
         journal.delete()
+    }
+    /** Logical file sizes in this exact owner directory; never traverse another owner or follow links. */
+    fun diskUsage(knownIds:Set<String> = emptySet()):OfflineDiskUsage=synchronized(lock) {
+        if(!owner()) {
+            if(root.exists() && root.walkTopDown().any{it.isFile})throw IOException("离线内容身份无法确认，未显示占用统计")
+            return@synchronized OfflineDiskUsage()
+        }
+        val rootPath=root.toPath().toAbsolutePath().normalize()
+        val ids=knownIds.associateBy{sha(it.toByteArray())}.toMutableMap()
+        val formats=mutableMapOf<String,String>()
+        val files=mutableListOf<Pair<java.nio.file.Path,Long>>()
+        java.nio.file.Files.walk(rootPath).use { stream->stream.forEach { path->
+            try {
+                val attr=java.nio.file.Files.readAttributes(path,java.nio.file.attribute.BasicFileAttributes::class.java,java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if(attr.isRegularFile)files+=path to attr.size().coerceAtLeast(0)
+            }catch(_:java.nio.file.NoSuchFileException){/* A completed temporary file may disappear during the snapshot. */}
+        }}
+        for((path,_) in files) {
+            val rel=rootPath.relativize(path)
+            if(rel.nameCount==3 && path.fileName.toString()=="manifest.json") {
+                val data=json(path.toFile())?:continue
+                val id=data.optString("bookId")
+                if(Regex("^(public:[0-9]+|(?:private|shared):[a-fA-F0-9-]{36})$").matches(id) && sha(id.toByteArray())==rel.getName(0).toString()) {
+                    ids[rel.getName(0).toString()]=id
+                    data.optString("format").takeIf{it in listOf("TXT","EPUB")}?.let{formats[id]=it}
+                }
+            }
+        }
+        val bytes=mutableMapOf<String,Long>();val payload=mutableSetOf<String>();var total=0L
+        for((path,size) in files) {
+            total=Math.addExact(total,size)
+            val rel=rootPath.relativize(path);val id=ids[rel.getName(0).toString()]?:continue
+            bytes[id]=Math.addExact(bytes[id]?:0L,size)
+            if(path.fileName.toString() !in setOf("epoch","cancel-journal.json"))payload+=id
+        }
+        OfflineDiskUsage(total,bytes,formats,payload)
     }
     fun generation(id:String):Long=synchronized(lock){recoverCancellation(id);rawGeneration(id)}
     fun isCurrent(id:String,epoch:Long)=generation(id)==epoch
@@ -141,8 +178,8 @@ class OfflineStore(private val root:File,val owner:String,private val freeSpace:
         val entry=index(id,v).getJSONObject("items").optJSONObject(rid)?:return@synchronized false
         entry.optString("sha256")==expected && entry.optLong("size")==size && hasResource(id,v,rid)
     }
-    fun status(id:String,verify:Boolean=false):OfflineStatus=synchronized(lock) {
-        val manifest=manifest(id)?:return@synchronized OfflineStatus();val v=manifest.getString("contentVersion")
+    fun status(id:String,verify:Boolean=false,chapterId:String?=null):OfflineStatus=synchronized(lock) {
+        val manifest=manifest(id,chapterId)?:return@synchronized OfflineStatus();val v=manifest.getString("contentVersion")
         val total=manifest.getJSONArray("resources").length();val items=index(id,v).getJSONObject("items")
         val saved=(0 until manifest.getJSONArray("resources").length()).count { n->
             val rid=manifest.getJSONArray("resources").getJSONObject(n).getString("resourceId")

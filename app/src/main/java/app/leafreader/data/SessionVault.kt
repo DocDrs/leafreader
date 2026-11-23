@@ -14,10 +14,11 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Passwords are never part of the persisted session. */
 data class SavedSession(val origin: String, val accountId: String, val deviceId: String,
-                        val accessToken: String, val refreshToken: String) {
+                        val accessToken: String, val refreshToken: String, val storageOrigin:String = origin) {
     override fun toString() = "SavedSession(redacted)"
     fun validate() {
         require(ServiceOrigin(origin).uri.scheme == "https")
+        require(ServiceOrigin(storageOrigin).value==ServiceOrigin(origin).value)
         require(listOf(accountId, deviceId, accessToken, refreshToken).all { it.isNotBlank() && it.length <= 16384 && it.none { c -> c.code < 32 } })
     }
 }
@@ -77,7 +78,7 @@ class EncryptedSessionVault(context: Context, private val cipher: SessionCipher 
     override fun save(session: SavedSession): Boolean = try {
         session.validate()
         val json = JSONObject().put("version", 1).put("origin", session.origin).put("account", session.accountId)
-            .put("device", session.deviceId).put("access", session.accessToken).put("refresh", session.refreshToken)
+            .put("storageOrigin",session.storageOrigin).put("device", session.deviceId).put("access", session.accessToken).put("refresh", session.refreshToken)
         val bytes = cipher.encrypt(json.toString().toByteArray(Charsets.UTF_8))
         prefs.edit().putString("sealed", Base64.encodeToString(bytes, Base64.NO_WRAP)).commit()
     } catch (_: Exception) { runCatching { clear() }; false }
@@ -87,7 +88,7 @@ class EncryptedSessionVault(context: Context, private val cipher: SessionCipher 
             require(value.length <= 100000)
             val json = JSONObject(String(cipher.decrypt(Base64.decode(value, Base64.NO_WRAP)), Charsets.UTF_8))
             require(json.getInt("version") == 1)
-            val session = SavedSession(json.getString("origin"), json.getString("account"), json.getString("device"), json.getString("access"), json.getString("refresh"))
+            val session = SavedSession(json.getString("origin"), json.getString("account"), json.getString("device"), json.getString("access"), json.getString("refresh"),json.optString("storageOrigin",json.getString("origin")))
             session.validate(); SessionLoad.Ready(session)
         } catch (_: Exception) { runCatching { clear() }; SessionLoad.Unavailable }
     }

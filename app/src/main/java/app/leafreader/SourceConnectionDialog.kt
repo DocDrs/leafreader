@@ -44,6 +44,7 @@ fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () ->
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("当前：${state.sourceLabel}", fontSize = 14.sp)
+                    state.retentionNote?.let{Text(it,fontSize=12.sp)}
                     if (domain != null) {
                         Text(if (useCustom) "目标：已配置服务" else "目标：${builtIn!!.provider}", fontSize = 15.sp)
                         Text(domain, fontSize = 13.sp)
@@ -61,13 +62,13 @@ fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () ->
                         Text(if (advanced) "收起高级设置" else "高级设置")
                     }
                     if (advanced) {
-                        Text("更换服务器会清除当前会话；各服务器的本机阅读进度分别保留。", fontSize = 11.sp)
+                        Text("确认登录成功后才切换服务；取消或登录失败将保留当前会话和记录。", fontSize = 11.sp)
                         OutlinedTextField(value = customOrigin, onValueChange = {
-                            customOrigin = it; useCustom = true; password = ""; authorized = false; targetChanged()
+                            customOrigin = it; useCustom = true; password = ""; authorized = false
                         }, singleLine = true, label = { Text("我的服务地址（HTTPS）") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), enabled = !state.connecting)
                         if (builtIn != null && useCustom) TextButton(onClick = {
-                            useCustom = false; password = ""; authorized = false; targetChanged()
+                            useCustom = false; password = ""; authorized = false
                         }, enabled = !state.connecting) { Text("使用内置 BookHub") }
                     }
                     if (useCustom) Row {

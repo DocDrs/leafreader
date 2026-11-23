@@ -31,13 +31,25 @@ class ReadingStore(context: Context, val sourceId: String) {
     }
     fun rememberBook(book: Book) {
         val b = org.json.JSONObject().put("id", book.id).put("title", book.title).put("author", book.author)
-            .put("description", book.description).put("category", book.category).put("count", book.chapterCount).put("color", book.color).put("format", book.format).put("sourceId", sourceId)
+            .put("description", book.description).put("category", book.category).put("count", book.chapterCount).put("color", book.color).put("format", book.format).put("sourceId", sourceId).put("readAllowed",book.readAllowed?:org.json.JSONObject.NULL)
         prefs.edit().putString("recentBook", b.toString()).commit()
+    }
+    fun preserveRecovery(bookId:String) {
+        val p=position(bookId)?:return
+        val key="recovery-$bookId-${p.updatedAt}"
+        if(!prefs.contains(key))prefs.edit().putString(key,org.json.JSONObject().put("chapter",p.chapterId).put("offset",p.offset).put("graphic",p.graphicId).toString()).commit()
+    }
+    fun preservedPosition(bookId:String):ReadingPosition? = prefs.all.entries.filter{it.key.startsWith("recovery-$bookId-")}.mapNotNull { entry->
+        runCatching{val j=org.json.JSONObject(entry.value as String);ReadingPosition(j.getString("chapter"),j.getInt("offset"),entry.key.substringAfterLast('-').toLong(),j.optString("graphic").takeIf{it.isNotBlank() && it!="null"})}.getOrNull()
+    }.maxByOrNull{it.updatedAt}
+    fun restorePreserved(bookId:String):Boolean {
+        val old=preservedPosition(bookId)?:return false
+        preserveRecovery(bookId);save(bookId,old.chapterId,old.offset,old.graphicId);return true
     }
     fun recentBook(): Book? = try {
         val b = org.json.JSONObject(prefs.getString("recentBook", null) ?: "{}")
         Book(b.getString("id"), b.getString("title"), b.getString("author"), b.getString("description"), b.getString("category"),
-            b.getInt("count"), b.getLong("color"), b.optString("format", "TXT"), sourceId)
+            b.getInt("count"), b.getLong("color"), b.optString("format", "TXT"), sourceId,b.opt("readAllowed") as? Boolean)
     } catch (_: Exception) { null }
     fun lastBook(): String? = prefs.getString("lastBook", null)
     /** The old time key is evidence of reading in 0.2; migrate it once, never invent an unread timestamp. */
@@ -53,13 +65,13 @@ class ReadingStore(context: Context, val sourceId: String) {
         prefs.edit().putLong("${book.id}.entered", at.coerceAtLeast(0)).commit()
     }
     private fun encodeBook(book: Book) = org.json.JSONObject().put("id", book.id).put("title", book.title).put("author", book.author)
-        .put("description", book.description).put("category", book.category).put("count", book.chapterCount).put("color", book.color).put("format", book.format).put("sourceId", sourceId)
+        .put("description", book.description).put("category", book.category).put("count", book.chapterCount).put("color", book.color).put("format", book.format).put("sourceId", sourceId).put("readAllowed",book.readAllowed?:org.json.JSONObject.NULL)
     private fun decodeBooks(value: String?): List<Book> = try {
         val list = org.json.JSONArray(value ?: "[]")
         (0 until list.length()).map { index ->
             val b = list.getJSONObject(index)
             Book(b.getString("id"), b.getString("title"), b.getString("author"), b.optString("description"), b.optString("category"),
-                b.optInt("count"), b.getLong("color"), b.optString("format", "TXT"), sourceId)
+                b.optInt("count"), b.getLong("color"), b.optString("format", "TXT"), sourceId,b.opt("readAllowed") as? Boolean)
         }
     } catch (_: Exception) { emptyList() }
     private fun writeBooks(key: String, books: List<Book>) {
@@ -73,11 +85,18 @@ class ReadingStore(context: Context, val sourceId: String) {
     fun savedServiceShelf(): List<Book> = decodeBooks(prefs.getString("serviceShelf", null))
     fun localShelf(): List<Book> = decodeBooks(prefs.getString("localShelf", null))
     /** Local visibility only; serviceShelf/localShelf and all reading/download records remain intact. */
+    fun knownReadPermission(bookId:String):Boolean?=if(prefs.contains("$bookId.readAllowed-v1"))prefs.getBoolean("$bookId.readAllowed-v1",false) else (savedServiceShelf()+localShelf()).firstOrNull{it.id==bookId && it.readAllowed!=null}?.readAllowed
+    fun confirmReadPermission(bookId:String,allowed:Boolean) {
+        prefs.edit().putBoolean("$bookId.readAllowed-v1",allowed).commit()
+        for(key in listOf("serviceShelf","localShelf")) {
+            val old=decodeBooks(prefs.getString(key,null));if(old.any{it.id==bookId})writeBooks(key,old.map{if(it.id==bookId)it.copy(readAllowed=allowed)else it})
+        }
+    }
     fun hiddenShelfIds():Set<String> = prefs.getStringSet("shelfHidden-v1",emptySet())!!.toSet()
     fun hideFromShelf(ids:Set<String>):Boolean = prefs.edit().putStringSet("shelfHidden-v1",hiddenShelfIds()+ids).commit()
     fun addToShelf(book: Book):Boolean {
         ensureOrder(listOf(book))
-        val array=org.json.JSONArray();(localShelf()+book).distinctBy{it.id}.forEach{array.put(encodeBook(it))}
+        val array=org.json.JSONArray();(listOf(book)+localShelf()).distinctBy{it.id}.forEach{array.put(encodeBook(it))}
         return prefs.edit().putString("localShelf",array.toString()).putStringSet("shelfHidden-v1",hiddenShelfIds()-book.id).commit()
     }
     private fun ensureOrder(books: List<Book>) {
@@ -93,6 +112,18 @@ class ReadingStore(context: Context, val sourceId: String) {
         return unique.sortedWith(compareByDescending<Book> { prefs.contains("${it.id}.chapter") || prefs.contains("${it.id}.entered") }
             .thenByDescending { lastEnteredAt(it.id) }.thenBy { prefs.getInt("${it.id}.shelfOrder", Int.MAX_VALUE) })
     }
+    /** Read-only inventory for the unified shelf: do not rewrite legacy data during discovery. */
+    fun peekShelf():List<Book> {
+        for(key in listOf("serviceShelf","localShelf")) {
+            val raw=prefs.getString(key,null)?:continue
+            val array=org.json.JSONArray(raw)
+            if(decodeBooks(raw).size!=array.length())throw java.io.IOException("本机书架元数据不完整")
+        }
+        return (savedServiceShelf()+localShelf()).distinctBy{it.id}.filterNot{it.id in hiddenShelfIds()}
+    }
+    fun enteredReadOnly(bookId:String):Long = if(prefs.contains("$bookId.entered"))prefs.getLong("$bookId.entered",0).coerceAtLeast(0)
+        else if(prefs.contains("$bookId.chapter"))prefs.getLong("$bookId.time",0).coerceAtLeast(0) else 0L
+    fun shelfOrder(bookId:String):Int=prefs.getInt("$bookId.shelfOrder",Int.MAX_VALUE)
     fun settings() = ReaderSettings(prefs.getFloat("font", 21f), prefs.getFloat("spacing", 1.55f), prefs.getInt("palette", 0),
         prefs.getFloat("paragraphGap", 18f), prefs.getFloat("marginHorizontal", 26f), prefs.getFloat("marginVertical", 25f)).normalized()
     fun saveSettings(value: ReaderSettings) {

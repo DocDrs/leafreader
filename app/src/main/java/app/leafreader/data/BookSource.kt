@@ -4,7 +4,7 @@ import java.io.IOException
 
 data class Book(val id: String, val title: String, val author: String, val description: String,
                 val category: String, val chapterCount: Int, val color: Long, val format: String = "TXT",
-                val sourceId: String = "") {
+                val sourceId: String = "", val readAllowed:Boolean?=null) {
     val key: String get() = if (sourceId.isEmpty()) id else "$sourceId|$id"
 }
 data class BookPage(val items: List<Book>, val nextCursor: String? = null, val hasMore: Boolean = false)
@@ -21,6 +21,8 @@ data class Chapter(val id: String, val title: String, val paragraphs: List<Strin
 /** Replace this boundary only after verifying source access and content rights. No guessed endpoints. */
 interface BookSource {
     val id: String
+    /** Trusted local provider with independently retained reading rights; never inferred from downloaded bytes. */
+    val independentOffline:Boolean get()=false
     suspend fun books(): List<Book>
     suspend fun browse(query: String = "", cursor: String? = null): BookPage = BookPage(books().filter {
         query.isBlank() || it.title.contains(query, true) || it.author.contains(query, true)
@@ -37,6 +39,7 @@ interface BookSource {
         return chapters.getOrNull(index + direction)?.id?.takeIf { index >= 0 }
     }
     /** Only return complete canonical text lengths already available locally; remote sources must not prefetch a book. */
+    fun progressIsReliable(bookId:String):Boolean = true
     suspend fun chapterLengths(bookId: String): List<Int>? = null
 }
 

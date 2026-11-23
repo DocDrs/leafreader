@@ -24,13 +24,18 @@ class BookHubLoginUiTest {
     private fun content(body:@Composable ()->Unit) {compose.runOnUiThread{compose.activity.setContent(content=body)}}
 
     @Test fun publicDistributionRequiresExplicitServiceAddressBeforeLogin() {
-        var submitted=false
-        content { MaterialTheme { SourceConnectionDialog(ReaderState(),"",{},{_,_,_->submitted=true},{}) } }
+        var submitted=false;var target:String?=null
+        content { MaterialTheme { SourceConnectionDialog(ReaderState(),"",{},{origin,_,_->submitted=true;target=origin},{}) } }
         assertNull(BuiltInBookHub.confirmedEntry)
         compose.onNodeWithText("我的服务地址（HTTPS）").assertIsDisplayed()
         compose.onNodeWithText("服务账号").performTextInput("fixture-user")
         compose.onNodeWithText("服务密码").performTextInput("fixture-password")
         compose.onNodeWithText("登录 BookHub").assertIsNotEnabled();assertFalse(submitted)
+        compose.onNodeWithText("我的服务地址（HTTPS）").performScrollTo().performTextInput("https://public-login.fixture.invalid")
+        compose.onNodeWithText("服务密码").performScrollTo().performTextInput("fixture-password")
+        compose.onNodeWithText("登录 BookHub").assertIsNotEnabled()
+        compose.onNode(isToggleable()).performScrollTo().performClick()
+        compose.onNodeWithText("登录 BookHub").assertIsEnabled().performClick();assertTrue(submitted);assertEquals("https://public-login.fixture.invalid",target)
     }
 
     @Test fun confirmedFixtureShowsDomainAndOnlyUsernamePasswordByDefault() {
@@ -75,6 +80,6 @@ class BookHubLoginUiTest {
         compose.onNodeWithText("使用内置 BookHub").performScrollTo().performClick()
         compose.onNodeWithText("bookhub.fixture.invalid").assertIsDisplayed()
         compose.onNodeWithText("登录 BookHub").assertIsNotEnabled()
-        assertEquals(1, changes)
+        assertEquals(0, changes)
     }
 }

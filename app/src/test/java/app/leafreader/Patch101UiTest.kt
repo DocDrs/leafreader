@@ -86,7 +86,7 @@ class Patch101UiTest {
         }
         return book
     }
-    private fun menu(book:Book)=compose.onNodeWithTag("shelf-book-${book.id}").performSemanticsAction(SemanticsActions.OnLongClick){it()}
+    private fun menu(book:Book)=compose.onNode(SemanticsMatcher.expectValue(SavedBookIdentity,book.key)).performSemanticsAction(SemanticsActions.OnLongClick){it()}
     @Test fun countAndManageShareARowAndBatchLocalRemovalSurvivesRefreshAndReaddResumesOffline() {
         setup();val book=seedComplete();val books=vm.ui.value.shelfBooks
         await{(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
@@ -156,8 +156,8 @@ class Patch101UiTest {
         menu(book);compose.onNodeWithTag("remove-book-${book.id}").performClick()
         compose.runOnIdle{vm.connect("https://release.fixture.invalid","second-account","synthetic-password")}
         await{!vm.ui.value.connecting && vm.ui.value.connectionRevision!=rev};compose.onNodeWithTag("remove-shelf-confirm").assertDoesNotExist()
-        compose.runOnIdle{vm.removeFromShelf(setOf(book.key),rev);assertTrue(ReadingStore(compose.activity,book.sourceId).hiddenShelfIds().isEmpty());assertEquals(3,vm.ui.value.shelfBooks.size)}
-        val current=vm.ui.value.shelfBooks.first();compose.onNodeWithTag("tab-shelf").performClick();menu(current);compose.onNodeWithTag("remove-book-${current.id}").performClick();compose.onNodeWithTag("confirm-remove-shelf").performClick()
-        await{vm.ui.value.shelfBooks.size==2};assertFalse(vm.ui.value.shelfBooks.any{it.id==current.id});assertTrue(ReadingStore(compose.activity,current.sourceId).hiddenShelfIds().contains(current.id))
+        compose.runOnIdle{vm.removeFromShelf(setOf(book.key),rev);assertTrue(ReadingStore(compose.activity,book.sourceId).hiddenShelfIds().isEmpty());assertEquals(6,vm.ui.value.shelfBooks.size)}
+        val current=vm.ui.value.shelfBooks.first{it.sourceId==vm.store.sourceId};compose.onNodeWithTag("tab-shelf").performClick();menu(current);compose.onNodeWithTag("remove-book-${current.id}").performClick();compose.onNodeWithTag("confirm-remove-shelf").performClick()
+        await{vm.ui.value.shelfBooks.size==5};assertFalse(vm.ui.value.shelfBooks.any{it.key==current.key});assertTrue(ReadingStore(compose.activity,current.sourceId).hiddenShelfIds().contains(current.id))
     }
 }

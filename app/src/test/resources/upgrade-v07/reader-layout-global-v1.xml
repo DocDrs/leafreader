@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <float name="marginHorizontal" value="38.0" />
+    <float name="spacing" value="1.8" />
+    <float name="marginVertical" value="40.0" />
+    <int name="palette" value="4" />
+    <float name="paragraphGap" value="24.0" />
+    <float name="font" value="28.0" />
+</map>

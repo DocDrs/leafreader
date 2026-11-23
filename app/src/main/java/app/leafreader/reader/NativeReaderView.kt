@@ -81,7 +81,7 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
     }
     internal val compactProgressLabel:String get() {
         val page=if(visualPages.isNotEmpty() && geometry!=null)"${pageIndex+1}/$pageCount" else "—/—"
-        return "$page · ${displayedProgress.bookPercent?.let{"$it%"}?:"—"}"
+        return "$page · ${displayedProgress.bookPercent?.let{(if(displayedProgress.bookApproximate)"≈" else "")+"$it%"}?:"—"}"
     }
 
     init {

@@ -69,7 +69,7 @@ class ReleaseSearchStateTest {
             source.response={q,c->when{q.isNotBlank()->BookPage(listOf(book("owned-on-page-two"),book("new")));c==null->BookPage(listOf(book("first")),"shelf-next",true);else->BookPage(listOf(book("owned-on-page-two")))}}
             val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();assertEquals(1,vm.ui.value.shelfBooks.size)
             vm.search("词");advanceUntilIdle();assertEquals(listOf("new"),vm.ui.value.books.map{it.id});assertEquals(2,vm.ui.value.shelfBooks.size)
-            assertEquals(listOf("" to null,"" to "shelf-next","词" to null),source.calls)
+            assertEquals(listOf("" to null,"词" to null,"" to "shelf-next"),source.calls)
         }finally{Dispatchers.resetMain()}
     }
     @Test fun shelfFailureKeepsItsAuthClassificationAndSearchRetryCanResyncShelf()=runTest {
@@ -78,7 +78,7 @@ class ReleaseSearchStateTest {
             var fail=true;val source=Source()
             source.response={q,_->if(q.isBlank() && fail)throw SourceProblem(FailureKind.AUTH,"测试会话失效") else BookPage(if(q.isBlank())listOf(book("owned")) else listOf(book("owned"),book("new")))}
             val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.search("词");advanceUntilIdle()
-            assertTrue(vm.ui.value.error!!.contains("BH_AUTH"));assertTrue(vm.ui.value.books.isEmpty())
+            assertTrue(vm.ui.value.error!!.contains("BH_AUTH"));assertTrue(vm.ui.value.books.isNotEmpty());assertFalse(vm.ui.value.shelfKnownComplete)
             fail=false;vm.retrySearch();advanceUntilIdle();assertNull(vm.ui.value.error);assertEquals(listOf("new"),vm.ui.value.books.map{it.id})
         }finally{Dispatchers.resetMain()}
     }
@@ -107,7 +107,7 @@ class ReleaseSearchStateTest {
             val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,transport)}),sessionVault=vault)
             advanceUntilIdle();val owner=vm.ui.value.shelfBooks.single().sourceId
             vm.search("old");runCurrent();vm.connect(origin,"second","synthetic-password");runCurrent();late.complete(Unit);advanceUntilIdle()
-            assertNotEquals(owner,vm.ui.value.shelfBooks.single().sourceId);assertTrue(vm.ui.value.books.isEmpty());assertTrue(vm.ui.value.query.isEmpty());assertNull(vm.ui.value.error)
+            assertEquals(2,vm.ui.value.shelfBooks.size);assertNotEquals(owner,vm.ui.value.shelfBooks.single{it.sourceId==vm.store.sourceId}.sourceId);assertTrue(vm.ui.value.books.isEmpty());assertTrue(vm.ui.value.query.isEmpty());assertNull(vm.ui.value.error)
         }finally{Dispatchers.resetMain()}
     }
 }

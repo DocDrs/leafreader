@@ -33,11 +33,14 @@ class ServiceOrigin(value: String) {
     val value: String
     init {
         val u = try { URI(value.trim()) } catch (_: Exception) { protocol("请输入完整的 HTTPS 服务地址") }
+        val scheme=u.scheme?.lowercase(java.util.Locale.ROOT)
         val local = u.host in setOf("localhost", "127.0.0.1", "10.0.2.2")
         if (u.host.isNullOrBlank() || u.rawUserInfo != null || u.rawQuery != null || u.rawFragment != null ||
-            u.rawPath !in listOf(null, "", "/") || (u.scheme != "https" && !(local && u.scheme == "http")) ||
+            u.rawPath !in listOf(null, "", "/") || (scheme != "https" && !(local && scheme == "http")) ||
             u.port !in -1..65535 || u.port == 0) protocol("服务地址只填写 HTTPS 协议、主机和端口；本机测试可用 HTTP")
-        this.value = "${u.scheme}://${u.rawAuthority}".removeSuffix("/")
+        val host = u.host.lowercase(java.util.Locale.ROOT).removeSurrounding("[","]")
+        val authority = if (host.contains(':')) "[$host]" else host
+        this.value = "${u.scheme.lowercase()}://$authority" + if (u.port != -1 && !(scheme == "https" && u.port == 443)) ":${u.port}" else ""
         uri = URI(this.value)
     }
     fun resolve(path: String, resource: Boolean = false): URI {
@@ -121,21 +124,27 @@ class UrlConnectionTransport : StreamingWireTransport {
 
 /** Independent implementation of the observed protocol; persistence is supplied by the owning ViewModel. */
 class BookHubClient(val origin: ServiceOrigin, private val transport: WireTransport = UrlConnectionTransport()) {
+    private val readPermissions=java.util.concurrent.ConcurrentHashMap<String,Boolean>()
+    fun observedReadPermission(bookId:String)=readPermissions[bookId]
+    fun observeReadPermission(bookId:String,allowed:Boolean){readPermissions[bookId]=allowed}
     private var accessToken: String? = null
     private var refreshToken: String? = null
     var accountId: String? = null; private set
     private var deviceId = "leafreader-${UUID.randomUUID()}"
     private var sessionEpoch = 0L
+    var storageOrigin: String = origin.value; private set
+    fun retainStorageOrigin(value:String) { require(ServiceOrigin(value).value==origin.value);storageOrigin=value }
     private val refreshMutex = Mutex()
     var onSessionChanged: ((SavedSession?) -> Unit)? = null
     fun snapshot(): SavedSession? {
         val account = accountId ?: return null
-        return SavedSession(origin.value, account, deviceId, accessToken ?: return null, refreshToken ?: return null)
+        return SavedSession(origin.value, account, deviceId, accessToken ?: return null, refreshToken ?: return null, storageOrigin)
     }
     fun restore(session: SavedSession) {
         session.validate()
         if (ServiceOrigin(session.origin).value != origin.value) protocol("保存的会话不属于当前服务器")
         accountId = session.accountId; deviceId = session.deviceId
+        retainStorageOrigin(session.storageOrigin)
         accessToken = session.accessToken; refreshToken = session.refreshToken
     }
     fun clearSession() {

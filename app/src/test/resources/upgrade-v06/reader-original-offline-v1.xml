@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="mountain-letter-v1.chapter">letter-02</string>
+    <int name="nextShelfOrder" value="3" />
+    <long name="mountain-letter-v1.time" value="1795189473889" />
+    <int name="night-log-v1.history.night-02" value="233" />
+    <string name="lastBook">night-log-v1</string>
+    <int name="mountain-letter-v1.offset" value="147" />
+    <int name="mountain-letter-v1.history.letter-02" value="147" />
+    <float name="paragraphGap" value="21.0" />
+    <int name="night-log-v1.offset" value="233" />
+    <int name="night-log-v1.shelfOrder" value="1" />
+    <float name="marginHorizontal" value="35.0" />
+    <string name="serviceShelf">[{&quot;id&quot;:&quot;mountain-letter-v1&quot;,&quot;title&quot;:&quot;山海来信&quot;,&quot;author&quot;:&quot;栖页原创&quot;,&quot;description&quot;:&quot;一名替人修钟的姑娘，收到一封来自明天的信。她沿着废弃的山路，寻找一座没有刻度的灯塔。&quot;,&quot;category&quot;:&quot;温暖奇遇&quot;,&quot;count&quot;:3,&quot;color&quot;:4283526502,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;original-offline-v1&quot;},{&quot;id&quot;:&quot;night-log-v1&quot;,&quot;title&quot;:&quot;夜航备忘录&quot;,&quot;author&quot;:&quot;栖页原创&quot;,&quot;description&quot;:&quot;城市最后一班渡船上，一位新来的售票员开始记录乘客遗落的小事。那些未说完的话，终于找到了岸。&quot;,&quot;category&quot;:&quot;都市微光&quot;,&quot;count&quot;:3,&quot;color&quot;:4285751424,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;original-offline-v1&quot;}]</string>
+    <float name="spacing" value="1.75" />
+    <float name="marginVertical" value="39.0" />
+    <string name="night-log-v1.chapter">night-02</string>
+    <string name="localShelf">[{&quot;id&quot;:&quot;mountain-letter-v1&quot;,&quot;title&quot;:&quot;山海来信&quot;,&quot;author&quot;:&quot;栖页原创&quot;,&quot;description&quot;:&quot;一名替人修钟的姑娘，收到一封来自明天的信。她沿着废弃的山路，寻找一座没有刻度的灯塔。&quot;,&quot;category&quot;:&quot;温暖奇遇&quot;,&quot;count&quot;:3,&quot;color&quot;:4283526502,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;original-offline-v1&quot;},{&quot;id&quot;:&quot;retained-local-1&quot;,&quot;title&quot;:&quot;保留的旧本机记录&quot;,&quot;author&quot;:&quot;测试&quot;,&quot;description&quot;:&quot;非预置样书记录&quot;,&quot;category&quot;:&quot;&quot;,&quot;count&quot;:1,&quot;color&quot;:0,&quot;format&quot;:&quot;TXT&quot;,&quot;sourceId&quot;:&quot;original-offline-v1&quot;}]</string>
+    <long name="night-log-v1.time" value="1795189473898" />
+    <int name="palette" value="3" />
+    <int name="mountain-letter-v1.shelfOrder" value="0" />
+    <float name="font" value="25.0" />
+    <int name="retained-local-1.shelfOrder" value="2" />
+</map>

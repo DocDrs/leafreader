@@ -38,7 +38,7 @@ private class InitialReadBudget : AbstractCoroutineContextElement(Key) {
 
 
 class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?=null, val connection:ConnectionState=AlwaysOnline) : BookSource {
-    companion object {fun ownerId(client:BookHubClient)="bookhub-v1-" + digest(client.origin.value + "|" + (client.accountId ?: protocol("请先登录"))).take(32)}
+    companion object {fun ownerId(client:BookHubClient)="bookhub-v1-" + digest(client.storageOrigin + "|" + (client.accountId ?: protocol("请先登录"))).take(32)}
     override val id = ownerId(client)
     internal fun coverSessionValid()=client.snapshot()!=null && runCatching{ownerId(client)==id}.getOrDefault(false)
     internal suspend fun coverVersion(bookId:String)=client.coverVersion(bookId)
@@ -52,6 +52,18 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
     fun forgetDownloaded(bookId:String) {offline?.clear(bookId);manifests.remove(bookId);texts.keys.filter{it.startsWith("$bookId|")}.toList().forEach{texts.remove(it)};OfflineEvents.changed()}
     private val texts = object : LinkedHashMap<String, String>(24, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 16
+    }
+    override fun progressIsReliable(bookId:String):Boolean {
+        val m=manifests[bookId]?:return false
+        return m.format!="EPUB" || m.chapters.zipWithNext().all{(a,b)->readingGroup(m,a)<readingGroup(m,b)}
+    }
+    fun observedReadPermission(bookId:String)=client.observedReadPermission(bookId)
+    suspend fun completeLocalReader(bookId:String,chapterId:String?):BookHubSource? {
+        checkOfflineIdentity()
+        if(client.observedReadPermission(bookId)==false)throw SourceProblem(FailureKind.FORBIDDEN,"本书读取授权已被明确拒绝；完整副本不能替代授权")
+        val cache=offline?:return null
+        if(!disk{cache.status(bookId,verify=true,chapterId=chapterId).complete})return null
+        return BookHubSource(client,cache,object:ConnectionState{override val online=false;override val wifi=false})
     }
     override suspend fun books() = browse().items
     override suspend fun browse(query: String, cursor: String?): BookPage {
@@ -71,10 +83,14 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
         val books = array.objects().map { b ->
             val bookId = b.required("bookId")
             if (!Regex("^(public:[0-9]+|(?:private|shared):[a-fA-F0-9-]{36})$").matches(bookId)) protocol("服务返回的书籍标识无效")
+            val rawPermission=b.optJSONObject("capabilities")?.opt("canRead")
+            if(rawPermission!=null && rawPermission!=JSONObject.NULL && rawPermission !is Boolean)protocol("书籍读取权限字段无效")
+            val permission=rawPermission as? Boolean
+            if(permission!=null)client.observeReadPermission(bookId,permission)
             Book(bookId, b.optString("title").takeUnless { it.isBlank() || it == "null" } ?: "未命名图书",
                 b.optString("author").takeUnless { it.isBlank() || it == "null" } ?: "作者未注明",
                 b.optString("description").takeUnless { it == "null" } ?: "", "我的服务", 0, 0xFF516D66,
-                b.required("format"))
+                b.required("format"),readAllowed=permission)
         }.distinctBy { it.id }
         return BookPage(books, if (more) next else null, more)
     }
@@ -83,6 +99,12 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
         val manifest = fetchManifest(bookId)
         manifests[bookId] = manifest
         return manifest.chapters.map { ChapterRef(it.id, it.label) }
+    }
+    /** Permission recovery requires an authenticated success, never cached fallback on timeout. */
+    suspend fun freshChapters(bookId:String):List<ChapterRef> {
+        checkOfflineIdentity()
+        val manifest=fetchManifest(bookId,fresh=true);manifests[bookId]=manifest
+        return manifest.chapters.map{ChapterRef(it.id,it.label)}
     }
     override suspend fun chaptersFor(bookId:String,chapterId:String?):List<ChapterRef> {
         checkOfflineIdentity()
@@ -94,6 +116,7 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
     }
     override suspend fun chapter(bookId: String, chapterId: String): Chapter {
         checkOfflineIdentity()
+        if(client.observedReadPermission(bookId)==false)throw SourceProblem(FailureKind.FORBIDDEN,"本书读取授权已被明确拒绝；副本和进度已保留")
         var manifest = manifests[bookId] ?: fetchManifest(bookId).also { manifests[bookId] = it }
         if (connection.online && !manifest.offlineOnly && manifest.expiresAt.isBefore(Instant.now().plusSeconds(20))) manifest = renew(bookId, manifest)
         try { return readChecked(bookId, chapterId, manifest) }
@@ -127,16 +150,18 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
         manifests[bookId] = fresh
         return fresh
     }
-    private suspend fun fetchManifest(bookId: String,preferredChapter:String?=null): Manifest {
+    private suspend fun fetchManifest(bookId: String,preferredChapter:String?=null,fresh:Boolean=false): Manifest {
         val cache=offline;val epoch=cache?.generation(bookId)
-        if(cache!=null && !connection.online)return parseManifest(disk{cache.manifest(bookId,preferredChapter)}?:offlineMissing()).copy(cacheEpoch=epoch,offlineOnly=true)
+        if(!fresh && cache!=null && !connection.online)return parseManifest(disk{cache.manifest(bookId,preferredChapter)}?:offlineMissing()).copy(cacheEpoch=epoch,offlineOnly=true)
         val data = try {client.api("/books/${encoded(bookId)}/access")}
         catch(e:Exception) {
-            if(cache!=null && isNetworkFailure(e)) return parseManifest(disk{cache.manifest(bookId,preferredChapter)}?:throw e).copy(cacheEpoch=epoch,offlineOnly=true)
+            if(e is SourceProblem && e.kind==FailureKind.FORBIDDEN)client.observeReadPermission(bookId,false)
+            if(!fresh && cache!=null && isNetworkFailure(e)) return parseManifest(disk{cache.manifest(bookId,preferredChapter)}?:throw e).copy(cacheEpoch=epoch,offlineOnly=true)
             throw e
         }
         if (data.required("bookId") != bookId) protocol("阅读清单与当前书籍不一致")
         val parsed=parseManifest(data).copy(cacheEpoch=epoch)
+        client.observeReadPermission(bookId,true)
         if(cache!=null)cacheWrite{cache.saveManifest(bookId,data,epoch!!)}
         return parsed
     }

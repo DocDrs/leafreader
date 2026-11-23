@@ -94,7 +94,7 @@ class SessionRecoveryTest {
             val keys = first.ui.value.shelfBooks.map { it.key }.toSet()
             wire.offline = true
             val cold = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
-            assertTrue(cold.ui.value.remote); assertNotNull(cold.ui.value.shelfError); assertNotNull(vault.value)
+            assertTrue(cold.ui.value.remote); assertNull(cold.ui.value.shelfError); cold.loadShelf();advanceUntilIdle();assertNotNull(cold.ui.value.shelfError); assertNotNull(vault.value)
             assertEquals(keys, cold.ui.value.shelfBooks.map { it.key }.toSet()); assertEquals(1, wire.logins)
             wire.offline = false; wire.expire = true; cold.loadShelf(); advanceUntilIdle()
             assertEquals(1, wire.refreshes); assertEquals("fixture-access-new", vault.value!!.accessToken)
@@ -113,7 +113,7 @@ class SessionRecoveryTest {
             val keys = vm.ui.value.shelfBooks.map { it.key }
             wire.deny = true; vm.loadShelf(); advanceUntilIdle(); assertNotNull(vault.value); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
             wire.deny = false; wire.revoke = true; vm.loadShelf(); advanceUntilIdle()
-            assertNull(vault.value); assertTrue(vm.ui.value.notice!!.contains("重新登录")); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
+            assertNull(vault.value); assertNull(vm.ui.value.notice);assertTrue(vm.ui.value.sourceLabel.contains("重新登录")); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
             assertEquals(0, wire.refreshes)
         } finally { Dispatchers.resetMain() }
     }
@@ -127,7 +127,7 @@ class SessionRecoveryTest {
             vm.loadShelf(); advanceUntilIdle(); assertNotNull(vault.value); assertEquals(1, wire.refreshes)
             wire.refreshNetworkFailure = false; wire.refreshExpired = true
             vm.loadShelf(); advanceUntilIdle(); assertNull(vault.value); assertEquals(2, wire.refreshes)
-            assertTrue(vm.ui.value.notice!!.contains("重新登录")); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
+            assertNull(vm.ui.value.notice);assertTrue(vm.ui.value.sourceLabel.contains("重新登录")); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
         } finally { Dispatchers.resetMain() }
     }
 
@@ -188,7 +188,7 @@ class SessionRecoveryTest {
             vm.connect(origin, "fixture", "fixture-password"); runCurrent(); entered.await()
             vm.signOut(); release.complete(Unit); advanceUntilIdle()
             assertFalse(vm.ui.value.remote); assertNull(vault.value); assertNull(clients.single().snapshot())
-            assertEquals(listOf("local"), vm.ui.value.shelfBooks.map { it.id })
+            assertEquals(setOf("local"), vm.ui.value.shelfBooks.map { it.id }.toSet())
         } finally { Dispatchers.resetMain() }
     }
 
@@ -203,7 +203,7 @@ class SessionRecoveryTest {
             }
             val vm = ReaderViewModel(app, local, Wire().gate(), vault); advanceUntilIdle()
             assertFalse(vm.ui.value.remote); assertEquals(18, vm.store.position("local")!!.offset)
-            assertTrue(vm.ui.value.notice!!.contains("无法解密")); assertEquals(listOf("local"), vm.ui.value.shelfBooks.map { it.id })
+            assertTrue(vm.ui.value.notice!!.contains("无法解密")); assertEquals(setOf("local"), vm.ui.value.shelfBooks.map { it.id }.toSet())
         } finally { Dispatchers.resetMain() }
     }
 
@@ -225,7 +225,7 @@ class SessionRecoveryTest {
             val remote = vm.ui.value.shelfBooks.single { it.id == "public:1" }; val accountStore = vm.store
             vm.open(remote); runCurrent(); entered.await(); vm.signOut(); release.complete(Unit); advanceUntilIdle()
             assertNull(accountStore.position(remote.id)); assertNull(vm.ui.value.book); assertNull(vault.value)
-            assertEquals(listOf("local"), vm.ui.value.shelfBooks.map { it.id })
+            assertEquals(setOf("local","public:1"), vm.ui.value.shelfBooks.map { it.id }.toSet())
         } finally { Dispatchers.resetMain() }
     }
 }

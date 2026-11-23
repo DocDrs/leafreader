@@ -85,7 +85,7 @@ class LoginShelfRegressionTest {
         try {
             val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
             vm.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
-            val remote = vm.ui.value.shelfBooks.single { it.id == "public:1" }
+            val remote = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             val localKeys = vm.ui.value.shelfBooks.filter { it.sourceId == local.id }.map { it.key }
             vm.open(remote); advanceUntilIdle(); vm.position(53); vm.backToShelf()
             wire.failShelf = true; vm.loadShelf(); advanceUntilIdle()
@@ -95,7 +95,7 @@ class LoginShelfRegressionTest {
             vm.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             assertEquals(53, vm.positionOf(remote)!!.offset)
             vm.signOut(); advanceUntilIdle()
-            assertEquals(localKeys.toSet(), vm.ui.value.shelfBooks.map { it.key }.toSet())
+            assertEquals(localKeys.toSet()+remote.key, vm.ui.value.shelfBooks.map { it.key }.toSet())
             val cold = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
             cold.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             assertEquals(1, cold.ui.value.shelfBooks.count { it.key == remote.key })
@@ -109,20 +109,20 @@ class LoginShelfRegressionTest {
         try {
             val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
             vm.connect("https://first.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
-            val a = vm.ui.value.shelfBooks.single { it.id == "public:1" }
+            val a = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             vm.open(a); advanceUntilIdle(); vm.position(77); vm.backToShelf()
             vm.connect("https://first.fixture.invalid", "account-b", "fixture-password"); advanceUntilIdle()
             assertNull(wire.clients.first().accountId)
-            val b = vm.ui.value.shelfBooks.single { it.id == "public:1" }
+            val b = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             assertNotEquals(a.key, b.key); assertNull(vm.positionOf(b)); assertEquals(77, vm.positionOf(a)!!.offset)
             vm.open(a); advanceUntilIdle(); assertNotNull(vm.ui.value.error); assertNull(vm.ui.value.chapter)
             vm.backToShelf(); vm.open(b); advanceUntilIdle(); assertEquals(0, vm.ui.value.offset); vm.position(29); vm.backToShelf()
             val keys = vm.ui.value.shelfBooks.map { it.key }; wire.failLogin = true
             vm.connect("https://second.fixture.invalid", "account-b", "fixture-password"); advanceUntilIdle()
             assertEquals(keys, vm.ui.value.shelfBooks.map { it.key }); assertEquals(29, vm.positionOf(b)!!.offset)
-            vm.open(b); advanceUntilIdle(); assertTrue(vm.ui.value.error!!.contains("BH_AUTH")); vm.backToShelf()
+            vm.open(b); advanceUntilIdle(); assertNull(vm.ui.value.error);assertEquals(29,vm.ui.value.offset); vm.backToShelf()
             wire.failLogin = false; vm.connect("https://second.fixture.invalid", "account-b", "fixture-password"); advanceUntilIdle()
-            val other = vm.ui.value.shelfBooks.single { it.id == "public:1" }
+            val other = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             assertNotEquals(b.key, other.key); assertNull(vm.positionOf(other)); assertEquals(77, vm.positionOf(a)!!.offset)
         } finally { Dispatchers.resetMain() }
     }

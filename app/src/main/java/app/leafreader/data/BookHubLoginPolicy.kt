@@ -16,7 +16,7 @@ data class ConfirmedBookHubEntry(val origin: ServiceOrigin, val provider: String
 }
 
 object BuiltInBookHub {
-    // Public source distribution has no shared service endpoint. Configure an authorized origin in Settings.
+    // Configure your authorized HTTPS origin in Settings. No shared endpoint is published.
     val confirmedEntry: ConfirmedBookHubEntry? = null
 }
 
@@ -49,7 +49,7 @@ class SystemHttpsOriginVerifier(
             connection.setRequestProperty("Cookie", "")
             val status = connection.responseCode
             if (status in 300..399) throw SourceProblem(FailureKind.PROTOCOL, "服务器入口发生跳转，请确认最终地址；尚未发送账号密码")
-            if (status !in 200..299 && status !in listOf(401, 403, 405))
+            if (status !in 200..299 && status !in listOf(401, 403, 404, 405))
                 throw SourceProblem(FailureKind.NETWORK, "当前服务器暂不可用；尚未发送账号密码")
         } catch (e: SourceProblem) { throw e }
         catch (_: IOException) { throw SourceProblem(FailureKind.NETWORK, "无法验证当前服务器的 HTTPS 连接；尚未发送账号密码") }

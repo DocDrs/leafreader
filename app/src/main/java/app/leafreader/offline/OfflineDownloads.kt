@@ -52,6 +52,7 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         .put("job",r.jobId).put("nonce",r.nonce).put("metered",r.allowMetered).put("auto",r.automatic).put("state",r.state).put("message",r.message).toString()
     private fun decode(s:String):DownloadRequest?=try {val j=JSONObject(s);DownloadRequest(j.getString("key"),j.getString("owner"),j.getString("book"),j.getString("title"),j.getInt("job"),j.getString("nonce"),j.getBoolean("metered"),j.getBoolean("auto"),j.getString("state"),j.getString("message"))}catch(_:Exception){null}
     fun request(key:String)=prefs.getString("request-$key",null)?.let(::decode)
+    fun requestsForOwner(owner:String)=requests().filter{it.owner==owner}
     private fun requests()=prefs.all.filterKeys{it.startsWith("request-")}.values.mapNotNull{(it as? String)?.let(::decode)}
     fun key(owner:String,bookId:String)=sha("$owner|$bookId".toByteArray())
     fun activate(client:BookHubClient) {
