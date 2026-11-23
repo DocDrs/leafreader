@@ -33,7 +33,7 @@ class SignedOutStartupTest {
         compose.onNodeWithText("搜索离线样书").assertDoesNotExist();compose.onNodeWithText("使用原创离线样书").assertDoesNotExist()
         compose.onNodeWithTag("find-login").assertIsDisplayed();snapshot("find-login")
         compose.onNodeWithTag("find-login").performClick();compose.onNodeWithTag("tab-settings").assertIsSelected()
-        compose.onNodeWithTag("settings-source").performClick();compose.onNodeWithText("我的服务地址（HTTPS）").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("settings-source").performClick();compose.onNodeWithTag("source-address-editor").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("使用原创离线样书").assertDoesNotExist();compose.onNodeWithText("退出 BookHub，保留本机记录").assertDoesNotExist()
         compose.onNodeWithText("关闭").performClick();compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("tab-settings").assertIsSelected();compose.onNodeWithTag("settings-source").assertIsDisplayed()

@@ -7,29 +7,7 @@ import kotlin.coroutines.coroutineContext
 import java.io.IOException
 import javax.net.ssl.HttpsURLConnection
 
-/** An explicitly supplied HTTPS target; the public distribution does not provide a default. */
-data class ConfirmedBookHubEntry(val origin: ServiceOrigin, val provider: String, val evidence: String) {
-    init {
-        require(origin.uri.scheme == "https")
-        require(provider.isNotBlank() && evidence.isNotBlank())
-    }
-}
-
-object BuiltInBookHub {
-    // Configure your authorized HTTPS origin in Settings. No shared endpoint is published.
-    val confirmedEntry: ConfirmedBookHubEntry? = null
-}
-
-data class InitialBookHubTarget(val useCustom: Boolean, val customOrigin: String) {
-    companion object {
-        fun migrate(savedOrigin: String, confirmed: ConfirmedBookHubEntry?): InitialBookHubTarget {
-            val canonical = runCatching { ServiceOrigin(savedOrigin).value }.getOrNull()
-            val matchesDefault = canonical != null && canonical == confirmed?.origin?.value
-            return InitialBookHubTarget(savedOrigin.isNotBlank() && !matchesDefault, savedOrigin)
-        }
-    }
-}
-
+/** Service targets come only from explicit local configuration or an existing saved session. */
 fun interface LoginOriginVerifier { suspend fun verify(origin: ServiceOrigin) }
 
 /** No credentials, cookies or redirect following; standard certificate-chain and hostname validation. */

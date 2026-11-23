@@ -1,8 +1,8 @@
-# 栖页 LeafReader 1.0.6
+# 栖页 LeafReader 1.0.7
 
 原生 Android 阅读器，使用 Kotlin、Jetpack Compose 和 Android 原生文字排版。支持兼容 BookHub 接口的书籍服务，不包含后端服务、公共书库、预置账号或书籍内容。
 
-## 1.0.5–1.0.6 更新
+## 1.0.5–1.0.6 界面更新
 
 - 单本更多改为暖纸配色的原生 Compose 底部面板：顶部书名、作者与简明状态，按状态显示核验、下载／失败重试或取消；清除与本机移出置于分隔区，各自保留后果说明与确认，不添加目录。
 - 书架行保持紧凑。完整副本不显示默认重下，失败重试保留已有有效资源；核验只读本机，不联网或入队。
@@ -23,7 +23,7 @@
 
 失败切章可返回刚才的可读页，真实鉴权拒绝除外；失效章节/锚点提供目录与显式恢复。正文进度只在可靠映射时显示，估算使用 ≈。阅读目录复用、搜索异步发现上架状态、详情真封面和紧凑书架均保留。
 
-applicationId 仍为 `app.leafreader`，versionCode 为 `106`，versionName 为 `1.0.6`。存储目录、原有键与 Keystore 标识保留。公开源码构建不带私有交付证书，版本号增加并不能解决签名不匹配，详情见下方构建说明。
+applicationId 仍为 `app.leafreader`，versionCode 为 `107`，versionName 为 `1.0.7`。存储目录、原有键与 Keystore 标识保留。公开源码构建不带私有交付证书，版本号增加并不能解决签名不匹配，详情见下方构建说明。
 
 ## 功能
 
@@ -51,7 +51,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease
 ```
 
-Windows 使用 `gradlew.bat`。debug APK 由本机构建环境签名；release 默认生成未签名 APK，需要使用自己的签名流程。仓库不包含签名材料、SDK、JDK、构建缓存或安装包。从源码本地构建通常使用构建者自己的签名，不能覆盖已安装的同包名私有签名 APK（包括 1.0.1–1.0.6）。已有用户不要为试源码而卸载现有应用，可使用独立模拟器或测试机。
+Windows 使用 `gradlew.bat`。debug APK 由本机构建环境签名；release 默认生成未签名 APK，需要使用自己的签名流程。仓库不包含签名材料、SDK、JDK、构建缓存或安装包。从源码本地构建通常使用构建者自己的签名，不能覆盖已安装的同包名私有签名 APK（包括 1.0.1–1.0.7）。已有用户不要为试源码而卸载现有应用，可使用独立模拟器或测试机。
 
 Android 最低版本为 8.0/API 26，目标 API 35。测试使用 JUnit、Robolectric、Compose 测试与本地 MockWebServer；测试书名、正文、图片和身份均为合成 fixtures，`.invalid` 地址不是真实服务。测试不使用真实账号或实际书籍。`app/src/test/resources/upgrade-v06`、`upgrade-v07` 仅包含旧代码在合成资料上生成的升级夹具；`UpgradeCipher` 的可复现 AES 测试键不用于应用或设备 Keystore。独立离线权路径仅由自写、永久授权的测试文件验证，正式 App 没有新增导入入口或内置正文。测试覆盖不等于真实设备安装、硬件 Keystore、系统后台调度或真实 BookHub 服务实测。
 
@@ -66,3 +66,10 @@ Android 最低版本为 8.0/API 26，目标 API 35。测试使用 JUnit、Robole
 | `covers/` | 内嵌封面识别及缩图缓存 |
 
 第三方组件与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [licenses](licenses/)。本仓库暂未为项目代码添加开源许可证，第三方声明仅适用于各自组件。
+
+
+## 1.0.7 书源地址隐私
+
+应用不内置任何 BookHub 服务地址，也不提供私有构建注入入口。首次使用请在设置中的 BookHub 配置页手填自己获授权的 HTTPS 地址。常态界面只显示连接状态；实际地址仅在主动打开的「编辑书源地址」页可见。每次新登录前核对该页目标并确认读取许可，账号密码仅发往核对过的精确 HTTPS origin，不跨域转发、不保存密码。
+
+升级保留设备中原有服务配置和加密会话，不改变书架、隐藏标记、进度、布局、离线副本与队列格式。编辑、取消或登录失败不切换旧会话。旧版仅存在于内置值而未曾保存的地址不会重新内置，须手填。源代码本地构建通常用构建者自己的签名，不能覆盖已安装的同包名私有 APK；已有用户不要为测试源码而卸载，请使用独立模拟器或测试机。

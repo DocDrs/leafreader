@@ -69,6 +69,7 @@ class BookHubAppFlowTest {
             compose.onNodeWithTag("tab-settings").performClick()
             compose.onNodeWithTag("settings-source").performClick()
             compose.onNodeWithText("我的服务地址（HTTPS）").performScrollTo().performTextInput("https://flow.fixture.invalid")
+            compose.onNodeWithTag("confirm-source-target").performClick()
             compose.onNodeWithText("服务账号").performScrollTo().performTextInput("fixture-user")
             compose.onNodeWithText("服务密码").performScrollTo().performTextInput("fixture-password")
             compose.onNode(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role,androidx.compose.ui.semantics.Role.Checkbox)).performScrollTo().performClick()

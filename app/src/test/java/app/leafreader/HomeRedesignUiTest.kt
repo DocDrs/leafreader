@@ -78,7 +78,7 @@ class HomeRedesignUiTest {
         compose.onNodeWithTag("shelf-book-home-5").assertIsDisplayed()
         compose.onNodeWithTag("tab-find").performClick();compose.onNodeWithText("来源").assertDoesNotExist()
         compose.onNodeWithTag("find-login").performClick();compose.onNodeWithTag("tab-settings").assertIsSelected()
-        compose.onNodeWithTag("settings-source").performClick();compose.onNodeWithText("BookHub 登录").assertIsDisplayed();compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithTag("settings-source").performClick();compose.onNodeWithTag("source-address-editor").assertIsDisplayed();compose.onNodeWithText("关闭").performClick()
         compose.activityRule.scenario.recreate();compose.onNodeWithTag("tab-settings").assertIsSelected()
         compose.onNodeWithTag("tab-shelf").performClick()
         compose.onNodeWithTag("shelf-list").performScrollToIndex(0)

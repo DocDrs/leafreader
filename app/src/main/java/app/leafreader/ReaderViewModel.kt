@@ -121,7 +121,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         }
         offlineRuntime?.activate(next)
         serverPrefs.edit().putString("origin", next.origin.value).apply()
-        state.value = ReaderState(settings = state.value.settings, remote = true, sourceLabel = "BookHub · ${next.origin.uri.host}",
+        state.value = ReaderState(settings = state.value.settings, remote = true, sourceLabel = "BookHub · 已连接",
             topTab = tab, shelfBooks = combinedShelf(),localShelfWarning=shelfIndex.warning, connectionRevision = state.value.connectionRevision + 1,automaticWifi=offlineRuntime?.automaticWifi()?:true,offline=offlineRuntime?.connection?.online==false)
         if (persist) next.snapshot()?.let { next.onSessionChanged?.invoke(it) }
         if(persist || combinedShelf().isEmpty())loadShelf() else state.update{it.copy(shelfLoading=false)}

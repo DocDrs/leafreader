@@ -176,7 +176,7 @@ fun ReaderApp(vm: ReaderViewModel, bars: (Boolean, Boolean) -> Unit = { _, _ -> 
     }
     if (sheet == "settings") ModalBottomSheet(onDismissRequest = { sheet = null }, containerColor = Cream) { ReaderControls(state.settings, vm::settings) }
     if(hiddenCleaner && offlineEnabled)HiddenCopyCleaner(state,vm,{hiddenCleaner=false}) { hiddenClearTarget=it }
-    if (sourceInfo) SourceConnectionDialog(state, vm.ownOrigin(), { vm.cancelConnection(); sourceInfo = false }, vm::connect, vm::signOut, vm::clearRemoteForServerSelection)
+    if (sourceInfo) SourceConnectionDialog(state, vm.ownOrigin(), { vm.cancelConnection(); sourceInfo = false }, vm::connect, vm::signOut)
     allBooks.firstOrNull { it.key == shelfActionId }?.let { book ->
         ShelfBookActions(book,state,vm,
             dismiss = { shelfActionId = null },

@@ -27,16 +27,13 @@ import java.security.cert.Certificate
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class BookHubLoginPolicyTest {
-    private val fixture = ConfirmedBookHubEntry(ServiceOrigin("https://bookhub.fixture.invalid"), "测试服务", "fixture identity")
+    private val fixture = ServiceOrigin("https://bookhub.fixture.invalid")
 
     @Test fun migrationNeverReplacesALegacyDeploymentWithANewDefault() {
         assertEquals("https://same.fixture.invalid",ServiceOrigin("HTTPS://SAME.fixture.invalid:443/").value)
         assertEquals("https://[::1]",ServiceOrigin("https://[::1]:443/").value)
-        assertEquals(InitialBookHubTarget(true, "https://legacy.fixture.invalid"), InitialBookHubTarget.migrate("https://legacy.fixture.invalid", fixture))
-        assertFalse(InitialBookHubTarget.migrate("https://bookhub.fixture.invalid/", fixture).useCustom)
-        assertTrue(InitialBookHubTarget.migrate("https://legacy.fixture.invalid", null).useCustom)
-        assertFalse(InitialBookHubTarget.migrate("", null).useCustom)
-        assertNull(BuiltInBookHub.confirmedEntry)
+        assertEquals("https://legacy.fixture.invalid", ServiceOrigin("https://legacy.fixture.invalid/").value)
+
     }
 
     @Test fun failedHttpsVerificationNeverConstructsAClientOrSubmitsCredentials() = runBlocking {
@@ -44,7 +41,7 @@ class BookHubLoginPolicyTest {
         val gate = BookHubConnectionGate(LoginOriginVerifier { throw SourceProblem(FailureKind.NETWORK, "fixture TLS rejected") }, {
             clients++; BookHubClient(it)
         })
-        try { gate.login(fixture.origin.value, "fixture-user", "fixture-password"); fail("Expected rejection") }
+        try { gate.login(fixture.value, "fixture-user", "fixture-password"); fail("Expected rejection") }
         catch (e: SourceProblem) { assertEquals(FailureKind.NETWORK, e.kind) }
         assertEquals(0, clients)
     }
@@ -64,7 +61,7 @@ class BookHubLoginPolicyTest {
         val gate = BookHubConnectionGate(LoginOriginVerifier { events += "verify:${it.value}" }, {
             events += "client:${it.value}"; BookHubClient(it, wire)
         })
-        gate.login(fixture.origin.value, "fixture-user", "fixture-password")
+        gate.login(fixture.value, "fixture-user", "fixture-password")
         assertEquals(listOf("verify:https://bookhub.fixture.invalid", "client:https://bookhub.fixture.invalid"), events)
         assertEquals(1, calls.size)
         assertEquals("https://bookhub.fixture.invalid/api/v1/auth/login", calls.single().first.toString())
@@ -90,7 +87,7 @@ class BookHubLoginPolicyTest {
         for (probe in listOf(Probe(302), Probe(200, true))) {
             var clients = 0
             val gate = BookHubConnectionGate(SystemHttpsOriginVerifier { probe }, { clients++; BookHubClient(it) })
-            try { gate.login(fixture.origin.value, "fixture-user", "fixture-password"); fail("Expected verification error") }
+            try { gate.login(fixture.value, "fixture-user", "fixture-password"); fail("Expected verification error") }
             catch (_: SourceProblem) { }
             assertEquals(0, clients)
             assertEquals("HEAD", probe.requestMethod)
@@ -104,11 +101,11 @@ class BookHubLoginPolicyTest {
         var calls = 0
         val wire = WireTransport { _, _, _, _, _ -> calls++; WireResponse(302, byteArrayOf()) }
         val gate = BookHubConnectionGate(LoginOriginVerifier {}, { BookHubClient(ServiceOrigin("https://other.fixture.invalid"), wire) })
-        try { gate.login(fixture.origin.value, "fixture-user", "fixture-password"); fail("Expected origin mismatch") }
+        try { gate.login(fixture.value, "fixture-user", "fixture-password"); fail("Expected origin mismatch") }
         catch (_: SourceProblem) { }
         assertEquals(0, calls)
         val same = BookHubConnectionGate(LoginOriginVerifier {}, { BookHubClient(it, wire) })
-        try { same.login(fixture.origin.value, "fixture-user", "fixture-password"); fail("Expected redirect error") }
+        try { same.login(fixture.value, "fixture-user", "fixture-password"); fail("Expected redirect error") }
         catch (_: SourceProblem) { }
         assertEquals(1, calls)
     }
@@ -126,7 +123,7 @@ class BookHubLoginPolicyTest {
             advanceUntilIdle()
             assertEquals(0, probes)
             assertEquals("https://legacy.fixture.invalid", vm.ownOrigin())
-            assertTrue(InitialBookHubTarget.migrate(vm.ownOrigin(), BuiltInBookHub.confirmedEntry).useCustom)
+            assertEquals("https://legacy.fixture.invalid", ServiceOrigin(vm.ownOrigin()).value)
             assertEquals(25f, vm.ui.value.settings.fontSp)
             assertEquals(1.75f, vm.ui.value.settings.lineSpacing)
             assertEquals(4, vm.ui.value.settings.palette)
