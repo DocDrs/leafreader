@@ -82,7 +82,7 @@ class NativeReadingTest {
         view.turn(1); assertEquals(listOf(-1, 1), events)
     }
 
-    @Test fun slowHorizontalSwipeAndEdgeTapTurnExactlyOnePage() {
+    @Test fun slowHorizontalSwipeAndInteriorLeftTapTurnExactlyOnePage() {
         val chapter = original(); val view = NativeReaderView(app)
         view.layout(0, 0, 1080, 1920)
         view.bind(chapter.text, chapter.title, 0, 1, ReaderSettings())
@@ -94,8 +94,8 @@ class NativeReadingTest {
         event(MotionEvent.ACTION_MOVE, 600, 600f)
         event(MotionEvent.ACTION_UP, 1200, 300f)
         assertEquals(1, view.currentPage)
-        val down = MotionEvent.obtain(2000, 2000, MotionEvent.ACTION_DOWN, 10f, 800f, 0)
-        val up = MotionEvent.obtain(2000, 2050, MotionEvent.ACTION_UP, 10f, 800f, 0)
+        val down = MotionEvent.obtain(2000, 2000, MotionEvent.ACTION_DOWN, 120f, 800f, 0)
+        val up = MotionEvent.obtain(2000, 2050, MotionEvent.ACTION_UP, 120f, 800f, 0)
         view.onTouchEvent(down); view.onTouchEvent(up); down.recycle(); up.recycle()
         assertEquals(0, view.currentPage)
     }

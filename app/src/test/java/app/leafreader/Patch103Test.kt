@@ -37,7 +37,7 @@ class Patch103Test {
   Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
   try {
    val w=OfflineFixtures();val c=w.client();val v=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,v,false)
-   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime);vm.ui.first{!it.shelfLoading}
+   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime,linkBookHubShelf=false);vm.ui.first{!it.shelfLoading}
    val cache=runtime.cache(BookHubSource.ownerId(c));val m=w.manifest().put("bookId","public:9");val epoch=cache.generation("public:9")
    cache.saveManifest("public:9",m,epoch);cache.put("public:9",w.version,"a",ByteArray(200),epoch)
    val root=File(app.noBackupFilesDir,"offline-v1/"+sha(BookHubSource.ownerId(c).toByteArray()));File(root,"unknown.bin").writeBytes(ByteArray(31))
@@ -50,14 +50,14 @@ class Patch103Test {
   Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
   try {
    val w=OfflineFixtures();val c=w.client("first");val v=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,v,false)
-   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime);val book=vm.ui.first{!it.shelfLoading}.shelfBooks.single()
+   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime,linkBookHubShelf=false);val book=vm.ui.first{!it.shelfLoading}.shelfBooks.single()
    val cache=runtime.cache(book.sourceId);val m=w.manifest();val epoch=cache.generation(book.id);cache.saveManifest(book.id,m,epoch);w.bytes().forEach{(id,b)->cache.put(book.id,w.version,id,b,epoch)};cache.complete(book.id,m,epoch)
-   vm.store.save(book.id,"kept",37);val pos=vm.store.position(book.id);vm.removeFromShelf(setOf(book.key),vm.ui.value.connectionRevision)
+   vm.store.save(book.id,"kept",37);val pos=vm.store.position(book.id);vm.store.hideFromShelf(setOf(book.id));vm.loadShelf()
    val before=vm.managementSnapshot();assertEquals(book.key,before.books.single().key);assertTrue(before.bytesByBook[book.key]!!>0)
    vm.clearDownload(book);withContext(Dispatchers.IO){withTimeout(5000){while(cache.manifest(book.id)!=null)delay(10)}}
-   val after=vm.managementSnapshot();assertTrue(after.totalBytes<before.totalBytes);assertTrue(after.books.isEmpty());assertEquals(pos,vm.store.position(book.id))
+   val after=vm.managementSnapshot();assertTrue(after.totalBytes<before.totalBytes);assertTrue(after.books.isEmpty());assertNull(vm.store.position(book.id))
    vm.signOut();assertFalse(vm.managementSnapshot().available);assertTrue(vm.managementSnapshot().books.isEmpty())
-   val c2=w.client("second");val v2=MemorySessionVault().apply{value=c2.snapshot()};val second=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v2,offlineRuntime=OfflineDownloads(app,w.network,v2,false));second.ui.first{!it.shelfLoading}
+   val c2=w.client("second");val v2=MemorySessionVault().apply{value=c2.snapshot()};val second=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v2,offlineRuntime=OfflineDownloads(app,w.network,v2,false),linkBookHubShelf=false);second.ui.first{!it.shelfLoading}
    assertTrue(second.managementSnapshot().books.isEmpty());assertEquals(0L,second.managementSnapshot().totalBytes)
   }finally{Dispatchers.resetMain()}
  }
@@ -65,13 +65,13 @@ class Patch103Test {
   Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
   try {
    val w=OfflineFixtures();val c=w.client();val v=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,v,false)
-   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime);vm.ui.first{!it.shelfLoading}
+   val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=v,offlineRuntime=runtime,linkBookHubShelf=false);vm.ui.first{!it.shelfLoading}
    vm.signOut();assertEquals(OfflineRetention.NOTE,vm.ui.value.notice);assertTrue(vm.ui.value.retentionNote!!.contains("完整且版本匹配"));vm.dismissNotice()
-   val cold=ReaderViewModel(app,sessionVault=v,offlineRuntime=OfflineDownloads(app,w.network,v,false));assertEquals(OfflineRetention.NOTE,cold.ui.value.retentionNote);assertFalse(cold.managementSnapshot().available)
-   val c2=w.client();val activeVault=MemorySessionVault().apply{value=c2.snapshot()};val active=ReaderViewModel(app,connectionGate=gate(w),sessionVault=activeVault,offlineRuntime=OfflineDownloads(app,w.network,activeVault,false));active.ui.first{!it.shelfLoading};assertNull(active.ui.value.retentionNote)
+   val cold=ReaderViewModel(app,sessionVault=v,offlineRuntime=OfflineDownloads(app,w.network,v,false),linkBookHubShelf=false);assertEquals(OfflineRetention.NOTE,cold.ui.value.retentionNote);assertFalse(cold.managementSnapshot().available)
+   val c2=w.client();val activeVault=MemorySessionVault().apply{value=c2.snapshot()};val active=ReaderViewModel(app,connectionGate=gate(w),sessionVault=activeVault,offlineRuntime=OfflineDownloads(app,w.network,activeVault,false),linkBookHubShelf=false);active.ui.first{!it.shelfLoading};assertNull(active.ui.value.retentionNote)
    w.accessStatus=401;active.open(active.ui.value.shelfBooks.single());active.ui.first{!it.loading}
    assertTrue(active.ui.value.notice!!.contains("登录已失效"));assertTrue(active.ui.value.notice!!.contains(OfflineRetention.NOTE));assertFalse(active.ui.value.canReturnPage)
-   val after=ReaderViewModel(app,sessionVault=activeVault);assertEquals(OfflineRetention.NOTE,after.ui.value.retentionNote);assertFalse(after.managementSnapshot().available)
+   val after=ReaderViewModel(app,sessionVault=activeVault,linkBookHubShelf=false);assertEquals(OfflineRetention.NOTE,after.ui.value.retentionNote);assertFalse(after.managementSnapshot().available)
   }finally{Dispatchers.resetMain()}
  }
  @Test fun sizesAreLogicalBytesAndDoNotImplyCompleteCopies() {

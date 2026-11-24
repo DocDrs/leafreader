@@ -7,7 +7,7 @@ data class Book(val id: String, val title: String, val author: String, val descr
                 val sourceId: String = "", val readAllowed:Boolean?=null) {
     val key: String get() = if (sourceId.isEmpty()) id else "$sourceId|$id"
 }
-data class BookPage(val items: List<Book>, val nextCursor: String? = null, val hasMore: Boolean = false)
+data class BookPage(val items: List<Book>, val nextCursor: String? = null, val hasMore: Boolean = false,val membershipSafe:Boolean=true)
 data class ChapterRef(val id: String, val title: String)
 data class InitialReading(val chapter: Chapter, val notice: String? = null)
 data class ChapterGraphic(val id: String, val offset: Int, val bitmap: android.graphics.Bitmap, val description: String = "书中图片")

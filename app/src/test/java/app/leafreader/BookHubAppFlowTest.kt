@@ -62,7 +62,7 @@ class BookHubAppFlowTest {
             })
             lateinit var vm: ReaderViewModel
             compose.runOnUiThread {
-                vm = ReaderViewModel(ApplicationProvider.getApplicationContext<Application>(), connectionGate = gate, sessionVault = MemorySessionVault())
+                vm = ReaderViewModel(ApplicationProvider.getApplicationContext<Application>(), connectionGate = gate, sessionVault = MemorySessionVault(),linkBookHubShelf=false)
                 compose.activity.setContent { MaterialTheme { ReaderApp(vm) } }
             }
             compose.waitUntil(30000) { !vm.ui.value.shelfLoading }

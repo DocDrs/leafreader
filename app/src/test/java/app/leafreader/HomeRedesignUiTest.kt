@@ -40,7 +40,7 @@ class HomeRedesignUiTest {
         compose.runOnUiThread {
             compose.activity.viewModelStore.clear()
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST") override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault()) as T
+                @Suppress("UNCHECKED_CAST") override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent{MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFFA94435),background=Color(0xFFF7F3EB),surface=Color(0xFFF7F3EB),onBackground=Color(0xFF2F302A),onSurface=Color(0xFF2F302A),surfaceContainer=Color(0xFFF0EAE0))){ReaderApp(vm)}}
         }

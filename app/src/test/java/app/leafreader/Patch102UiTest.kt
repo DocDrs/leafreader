@@ -38,7 +38,7 @@ class Patch102UiTest {
  }
  @Test fun failedNextChapterHasWorkingReturnAndRetryActions() {
   lateinit var vm:ReaderViewModel;val source=Source()
-  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault());compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading}
   compose.onNodeWithTag("shelf-book-one").performClick();compose.waitUntil(10000){reader()!=null}
   compose.runOnIdle{reader()!!.turn(1);source.failure=true;reader()!!.performClick()}
@@ -51,7 +51,7 @@ class Patch102UiTest {
  }
  @Test fun invalidSavedChapterOffersExplicitRecoveryAndKeepsOldRecord() {
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,Source(),sessionVault=MemorySessionVault());vm.store.save("one","old-missing",91);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,Source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false);vm.store.save("one","old-missing",91);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading};compose.onNodeWithTag("shelf-book-one").performClick()
   compose.waitUntil(10000){vm.ui.value.error!=null};assertEquals("old-missing",vm.store.position("one")!!.chapterId)
   compose.onNodeWithText("主动打开目录").assertIsDisplayed()
@@ -64,19 +64,19 @@ class Patch102UiTest {
   val vault=MemorySessionVault().apply{value=client.snapshot()}
   val runtime=app.leafreader.offline.OfflineDownloads(compose.activity.application,wire.network,vault,false)
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading};val book=vm.ui.value.shelfBooks.single()
   compose.runOnIdle{
    val cache=runtime.cache(book.sourceId);val m=wire.manifest();val epoch=cache.generation(book.id)
    cache.saveManifest(book.id,m,epoch);wire.bytes().forEach{(id,bytes)->cache.put(book.id,wire.version,id,bytes,epoch)};cache.complete(book.id,m,epoch)
-   vm.store.save(book.id,"kept",37);wire.network.online=false;vm.removeFromShelf(setOf(book.key),vm.ui.value.connectionRevision);vm.selectTab("settings")
+   vm.store.save(book.id,"kept",37);wire.network.online=false;vm.store.hideFromShelf(setOf(book.id));vm.loadShelf();vm.selectTab("settings")
   }
   val before=wire.calls.size;val position=vm.store.position(book.id)
   compose.onNodeWithTag("offline-management").performScrollTo().performClick()
   compose.waitUntil(10000){compose.onAllNodesWithTag("hidden-clear-${book.id}").fetchSemanticsNodes().isNotEmpty()}
   assertEquals(before,wire.calls.size);assertNull(runtime.request(runtime.key(book.sourceId,book.id)))
-  compose.onNodeWithTag("hidden-clear-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
+  compose.onNodeWithTag("hidden-clear-${book.id}").performClick();compose.onNodeWithText("清除缓存与进度").performClick()
   compose.waitUntil(10000){runtime.cache(book.sourceId).status(book.id).saved==0}
-  assertEquals(position,vm.store.position(book.id));assertEquals(before,wire.calls.size)
+  assertNull(vm.store.position(book.id));assertEquals(before,wire.calls.size)
  }
 }

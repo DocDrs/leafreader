@@ -147,7 +147,7 @@ class EpubNavigationTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val w=Wire();w.pages["cover"]="<html><body><img src='/not-loaded.png'/></body></html>";w.shape(listOf("cover","a"),listOf(toc("a","one","正文一"),toc("a","two","正文二")))
-            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault());advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
+            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
             val refs=vm.chapterList(book);vm.open(book,refs.first().id);advanceUntilIdle();assertTrue(vm.ui.value.error!!.contains("BH_EPUB_IMAGE_ONLY"));assertNull(vm.store.position(book.id))
             vm.open(book);advanceUntilIdle();assertNull(vm.ui.value.error);assertEquals(refs[1].id,vm.ui.value.chapter!!.id);assertTrue(vm.ui.value.notice!!.contains("略过 1"))
             assertEquals(refs[1].id,vm.store.position(book.id)!!.chapterId)
@@ -158,7 +158,7 @@ class EpubNavigationTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val w=Wire();w.pages["cover"]="<html><body><svg><text>不能当小说文本</text></svg></body></html>";w.shape(listOf("cover","a"),listOf(toc("a","one")))
-            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault());advanceUntilIdle();val b=vm.ui.value.shelfBooks.single();val refs=vm.chapterList(b)
+            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();val b=vm.ui.value.shelfBooks.single();val refs=vm.chapterList(b)
             vm.store.save(b.id,refs.first().id,0);val saved=vm.store.position(b.id);vm.open(b);advanceUntilIdle()
             assertTrue(vm.ui.value.error!!.contains("BH_EPUB_IMAGE_ONLY"));assertEquals(saved,vm.store.position(b.id))
             vm.store.save(b.id,"invalid-old-chapter",12);val invalid=vm.store.position(b.id);vm.open(b);advanceUntilIdle();assertTrue(vm.ui.value.error!!.contains("已失效"));assertEquals(invalid,vm.store.position(b.id))
@@ -191,7 +191,7 @@ class EpubNavigationTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val w=Wire();w.pages["b"]="<html><body><p>最后正文。</p></body></html>";w.shape(listOf("a","b"),listOf(toc("a","two","后半"),toc("a","one","前半"),toc("b",label="最后")))
-            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault());advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
+            val vm=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
             vm.open(book);advanceUntilIdle();assertEquals("前半",vm.ui.value.chapter!!.title)
             val rows=vm.ui.value.chapters;assertEquals(listOf("后半","前半","最后"),rows.map{it.title})
             vm.boundary(1);advanceUntilIdle();assertEquals("后半",vm.ui.value.chapter!!.title)

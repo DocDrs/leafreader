@@ -59,7 +59,7 @@ class LoginShelfRegressionTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             legacyLocal(); val wire = Wire(); wire.empty()
-            val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             val before = vm.ui.value.shelfBooks.map { it.key }; val settings = vm.ui.value.settings
             assertEquals(27f, settings.fontSp); assertEquals(4, settings.palette)
             vm.connect("https://shelf.fixture.invalid", "account-a", "fixture-password")
@@ -74,7 +74,7 @@ class LoginShelfRegressionTest {
             assertNotNull(vm.ui.value.connectionError); assertEquals(before, vm.ui.value.shelfBooks.map { it.key }); assertEquals(settings, vm.ui.value.settings)
             vm.signOut(); advanceUntilIdle(); assertEquals(before, vm.ui.value.shelfBooks.map { it.key })
             vm.settings(settings.copy(paragraphSpacingDp = 33f))
-            val cold = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val cold = ReaderViewModel(app, local, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             assertEquals(before, cold.ui.value.shelfBooks.map { it.key }); assertEquals(33f, cold.ui.value.settings.paragraphSpacingDp)
             cold.open(cold.ui.value.shelfBooks.first()); advanceUntilIdle(); assertEquals(99, cold.ui.value.offset)
         } finally { Dispatchers.resetMain() }
@@ -83,7 +83,7 @@ class LoginShelfRegressionTest {
     @Test fun sameAccountCachedShelfAndProgressSurviveEmptyResponseLoadErrorReloginAndRestart() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             vm.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             val remote = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             val localKeys = vm.ui.value.shelfBooks.filter { it.sourceId == local.id }.map { it.key }
@@ -96,7 +96,7 @@ class LoginShelfRegressionTest {
             assertEquals(53, vm.positionOf(remote)!!.offset)
             vm.signOut(); advanceUntilIdle()
             assertEquals(localKeys.toSet()+remote.key, vm.ui.value.shelfBooks.map { it.key }.toSet())
-            val cold = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val cold = ReaderViewModel(app, local, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             cold.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             assertEquals(1, cold.ui.value.shelfBooks.count { it.key == remote.key })
             cold.open(cold.ui.value.shelfBooks.first { it.key == remote.key }); advanceUntilIdle()
@@ -107,7 +107,7 @@ class LoginShelfRegressionTest {
     @Test fun accountAndOriginSwitchesNeverReusePositionsOrOldSessionsAndFailedLoginKeepsShelf() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             vm.connect("https://first.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             val a = vm.ui.value.shelfBooks.single { it.id == "public:1" && it.sourceId==vm.store.sourceId }
             vm.open(a); advanceUntilIdle(); vm.position(77); vm.backToShelf()
@@ -136,7 +136,7 @@ class LoginShelfRegressionTest {
                 override suspend fun chapters(bookId: String) = listOf(ChapterRef("local", "本地"))
                 override suspend fun chapter(bookId: String, chapterId: String) = Chapter("local", "本地", listOf("这是本地文字。".repeat(80)))
             }
-            val wire = Wire(); val vm = ReaderViewModel(app, collision, wire.gate(), MemorySessionVault()); advanceUntilIdle()
+            val wire = Wire(); val vm = ReaderViewModel(app, collision, wire.gate(), MemorySessionVault(),linkBookHubShelf=false); advanceUntilIdle()
             vm.connect("https://collision.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             val sameIds = vm.ui.value.shelfBooks.filter { it.id == "public:1" }; assertEquals(2, sameIds.size); assertEquals(2, sameIds.map { it.key }.distinct().size)
             val localBook = sameIds.single { it.sourceId == collision.id }; val remote = sameIds.single { it.sourceId != collision.id }
@@ -162,7 +162,7 @@ class LoginShelfRegressionTest {
                 override suspend fun chapter(bookId: String, chapterId: String) = Chapter(chapterId, "", emptyList())
             }
             ReadingStore(app, slow.id).rememberServiceShelf(listOf(localA))
-            val wire = Wire(); val vm = ReaderViewModel(app, slow, wire.gate(), MemorySessionVault())
+            val wire = Wire(); val vm = ReaderViewModel(app, slow, wire.gate(), MemorySessionVault(),linkBookHubShelf=false)
             runCurrent(); entered.await(); vm.connect("https://shelf.fixture.invalid", "account-a", "fixture-password"); advanceUntilIdle()
             release.complete(Unit); advanceUntilIdle(); vm.backToShelf(); vm.loadShelf(); advanceUntilIdle()
             assertEquals(setOf("local-a", "public:1"), vm.ui.value.shelfBooks.map { it.id }.toSet())

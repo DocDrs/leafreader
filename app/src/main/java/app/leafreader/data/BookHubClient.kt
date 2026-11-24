@@ -21,6 +21,9 @@ import java.io.FileOutputStream
 import app.leafreader.offline.checkDownloadPolicy
 import app.leafreader.offline.DownloadStopped
 
+data class ShelfMembershipDetail(val book:Book,val present:Boolean,val revision:Long)
+data class ShelfMembershipResult(val present:Boolean,val revision:Long)
+
 enum class FailureKind { NETWORK, AUTH, FORBIDDEN, PREPARING, RATE_LIMIT, PROTOCOL, EMPTY, UNSUPPORTED, VERSION }
 class SourceProblem(val kind: FailureKind, message: String, val expired: Boolean = false,
                     val diagnostic: String = "BH_${kind.name}", val sessionRevoked: Boolean = false, val httpStatus:Int?=null) : IOException(message)
@@ -174,10 +177,10 @@ class BookHubClient(val origin: ServiceOrigin, private val transport: WireTransp
     }
     suspend fun api(path: String): JSONObject = authorized(path,"GET")
     suspend fun apiPost(path:String):JSONObject = authorized(path,"POST")
-    private suspend fun authorized(path:String,method:String):JSONObject {
+    private suspend fun authorized(path:String,method:String,body:JSONObject?=null):JSONObject {
         val token = accessToken ?: throw SourceProblem(FailureKind.AUTH, "请先连接服务并登录")
         val epoch = sessionEpoch
-        try { return send(path, method, null, token).also { checkEpoch(epoch) } }
+        try { return send(path, method, body, token).also { checkEpoch(epoch) } }
         catch (e: SourceProblem) {
             checkEpoch(epoch)
             if (e.sessionRevoked || (e.kind == FailureKind.AUTH && !e.expired)) { clearSession(); throw e }
@@ -188,12 +191,58 @@ class BookHubClient(val origin: ServiceOrigin, private val transport: WireTransp
             }
             checkEpoch(epoch)
             val fresh = accessToken ?: throw SourceProblem(FailureKind.AUTH, "登录已失效，请重新登录")
-            try { return send(path, method, null, fresh).also { checkEpoch(epoch) } }
+            if(body?.has("deviceId")==true)body.put("deviceId",deviceId)
+            try { return send(path, method, body, fresh).also { checkEpoch(epoch) } }
             catch (failure: SourceProblem) {
                 if (failure.kind == FailureKind.AUTH || failure.sessionRevoked) clearSession()
                 throw failure
             }
         }
+    }
+    /** Verified against the supplied original api.ts detailPath/command and library shelfToggle. */
+    suspend fun verifyShelfAccount() {
+        val page=api("/me/bookshelf?limit=20")
+        if(page.opt("items") !is org.json.JSONArray || page.opt("hasMore") !is Boolean)protocol("账号书架响应无效，未更改名单")
+    }
+    suspend fun shelfDetail(bookId:String,verifyAccount:Boolean=true):ShelfMembershipDetail {
+        requireShelfBook(bookId)
+        if(verifyAccount)verifyShelfAccount()
+        val path=if(bookId.startsWith("private:"))"/me/private-books/" else "/catalog/books/"
+        val data=api(path+encoded(bookId))
+        if(data.optString("bookId")!=bookId || data.opt("inBookshelf") !is Boolean)protocol("服务未提供本书的个人书架状态，未更改名单")
+        val raw=data.opt("shelfRevision")
+        val revision=if(raw==null || raw==JSONObject.NULL)0L else shelfRevision(raw)
+        val permission=data.optJSONObject("capabilities")?.opt("canRead")
+        if(permission!=null && permission!=JSONObject.NULL && permission !is Boolean)protocol("书籍授权字段无效")
+        if(permission is Boolean)observeReadPermission(bookId,permission)
+        val book=Book(bookId,data.optString("title").takeUnless{it.isBlank() || it=="null"}?:"未命名图书",
+            data.optString("author").takeUnless{it.isBlank() || it=="null"}?:"作者未注明",data.optString("description").takeUnless{it=="null"}.orEmpty(),"我的服务",0,0xFF516D66,
+            data.optString("format").takeIf{it.isNotBlank() && it!="null"}?:protocol("书籍格式字段缺失"),readAllowed=permission as? Boolean)
+        return ShelfMembershipDetail(book,data.getBoolean("inBookshelf"),revision)
+    }
+    suspend fun changeShelf(bookId:String,present:Boolean,baseRevision:Long):ShelfMembershipResult {
+        requireShelfBook(bookId);if(baseRevision<0)protocol("书架修订号无效")
+        val command=JSONObject().put("operationId",UUID.randomUUID().toString().replace("-",""))
+            .put("deviceId",deviceId).put("baseRevision",baseRevision)
+        val data=try{authorized("/me/bookshelf/"+encoded(bookId),if(present)"PUT" else "DELETE",command)}
+        catch(e:SourceProblem){if(e.httpStatus==409)throw SourceProblem(FailureKind.VERSION,"书架已在其他设备变化，请刷新后重试",diagnostic="BH_SHELF_REVISION_CONFLICT",httpStatus=409);throw e}
+        val state=data.optJSONObject("state")?:protocol("服务未确认书架操作，保留本机记录")
+        val revision=shelfRevision(state.opt("revision"))
+        if(revision<baseRevision || !state.has("deletedAt"))protocol("书架操作修订无效，保留本机记录")
+        val deleted=state.opt("deletedAt")
+        if(deleted!=JSONObject.NULL && (deleted !is String || deleted.isBlank() || deleted.length>128 || deleted.any{it.code<32}))protocol("服务未确认书架状态")
+        val actual=deleted==JSONObject.NULL
+        if(actual!=present)protocol("服务返回的书架状态与操作不一致，保留本机记录")
+        return ShelfMembershipResult(actual,revision)
+    }
+    private fun requireShelfBook(id:String) {
+        if(id.length>128 || !Regex("^(public:[0-9]+|(?:private|shared):[a-fA-F0-9-]{36})$").matches(id))protocol("书籍标识无效，未发出书架操作")
+    }
+    private fun shelfRevision(raw:Any?):Long {
+        val n=raw as? Number?:protocol("书架修订号缺失或无效")
+        val d=n.toDouble();val value=n.toLong()
+        if(!d.isFinite() || value<0 || value>9007199254740991L || d!=value.toDouble())protocol("书架修订号无效")
+        return value
     }
     private suspend fun refreshSession() {
         val refresh = refreshToken ?: throw SourceProblem(FailureKind.AUTH, "登录已失效，请重新连接服务")

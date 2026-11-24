@@ -39,7 +39,7 @@ class ShelfInteractionTest {
             runtime=OfflineDownloads(app,wire.network,vault,false)
             vm=androidx.lifecycle.ViewModelProvider(compose.activity, object:androidx.lifecycle.ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST") override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T =
-                    ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{}, {BookHubClient(it,transport)}),sessionVault=vault,offlineRuntime=runtime) as T
+                    ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{}, {BookHubClient(it,transport)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}
         }

@@ -24,13 +24,14 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
     private val context=context.applicationContext
     companion object {
         @Volatile private var singleton:OfflineDownloads?=null
+        private val queueGuards=java.util.concurrent.ConcurrentHashMap<String,Any>()
         fun get(context:Context):OfflineDownloads=singleton?:synchronized(this){singleton?:OfflineDownloads(context.applicationContext).also{singleton=it}}
     }
     private val prefs=context.getSharedPreferences("offline-queue-v1",Context.MODE_PRIVATE)
     private val scheduler=context.getSystemService(JobScheduler::class.java)
     @Volatile private var activeOwner:String?=null
     @Volatile private var activeClient:BookHubClient?=null
-    private val guard=Any()
+    private val guard=queueGuards.getOrPut(context.applicationInfo.dataDir){Any()}
     init {
         if(scheduleJobs)try {
             context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object:ConnectivityManager.NetworkCallback(){
@@ -59,7 +60,7 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         val owner=BookHubSource.ownerId(client)
         if(activeOwner!=null && activeOwner!=owner)deactivate()
         activeOwner=owner;activeClient=client
-        requests().filter{it.owner==owner && it.state in listOf("QUEUED","WAITING","RUNNING","PAUSED")}.forEach{
+        requests().filter{it.owner==owner && !ReadingStore(context,owner).cleanupPending(it.bookId) && it.state in listOf("QUEUED","WAITING","RUNNING","PAUSED")}.forEach{
             val queued=it.copy(state="QUEUED",message=if(!it.allowMetered && !connection.wifi) "等待 Wi-Fi" else "等待系统调度")
             save(queued)
         }
@@ -73,13 +74,14 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         };OfflineEvents.changed()
     }
     /** Batch idempotence must be atomic with enqueue, including simultaneous confirmations / automatic jobs. */
-    fun enqueueIfNeeded(owner:String,book:Book,allowMetered:Boolean=false,automatic:Boolean=false):BatchEnqueueResult=synchronized(guard) {
+    fun enqueueIfNeeded(owner:String,book:Book,allowMetered:Boolean=false,automatic:Boolean=false,stillWanted:()->Boolean={true}):BatchEnqueueResult=synchronized(guard) {
+        if(!stillWanted())return@synchronized BatchEnqueueResult.REJECTED
         if(owner!=activeOwner || activeClient?.snapshot()==null)return@synchronized BatchEnqueueResult.REJECTED
         if(busy(owner,book.id) || cache(owner).status(book.id,verify=true).complete)return@synchronized BatchEnqueueResult.PRESENT
         if(enqueue(owner,book,allowMetered,automatic))BatchEnqueueResult.ADDED else BatchEnqueueResult.REJECTED
     }
     fun enqueue(owner:String,book:Book,allowMetered:Boolean=false,automatic:Boolean=false):Boolean=synchronized(guard) {
-        if(owner!=activeOwner || activeClient?.snapshot()==null)return@synchronized false
+        if(owner!=activeOwner || activeClient?.snapshot()==null || ReadingStore(context,owner).cleanupPending(book.id))return@synchronized false
         if(automatic && !automaticWifi())return@synchronized false
         val key=key(owner,book.id);val previous=request(key)
         val id=previous?.jobId?:prefs.getInt("next-job",7000).also{prefs.edit().putInt("next-job",it+1).commit()}
@@ -96,7 +98,7 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         if(!scheduleJobs || activeOwner!=owner)return
         val pending=scheduler?.allPendingJobs.orEmpty().filter{it.service==ComponentName(context,OfflineDownloadService::class.java) && it.id!=finishedJob}.map{it.id}.toSet()
         var slots=(2-pending.size).coerceAtLeast(0)
-        for(r in requests().filter{it.owner==owner && it.state in listOf("QUEUED","WAITING","RUNNING") && (!it.automatic || automaticWifi()) && it.jobId !in pending}.sortedBy{it.jobId}) {
+        for(r in requests().filter{it.owner==owner && !ReadingStore(context,owner).cleanupPending(it.bookId) && it.state in listOf("QUEUED","WAITING","RUNNING") && (!it.automatic || automaticWifi()) && it.jobId !in pending}.sortedBy{it.jobId}) {
             if(slots<=0)break
             val result=try{scheduler?.schedule(jobInfo(r))}catch(_:RuntimeException){null}
             if(result==JobScheduler.RESULT_SUCCESS)slots-- else save(r.copy(state="FAILED",message="系统暂未安排下载，请重试"))
@@ -106,6 +108,17 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         synchronized(guard) {request(key(owner,bookId))?.let{scheduler?.cancel(it.jobId);save(it.copy(nonce=UUID.randomUUID().toString(),state="CANCELLED",message="已取消，已保存内容保留"))};cache(owner).cancelWrites(bookId)}
         scheduleMore(owner)
         OfflineEvents.changed()
+    }
+    /** Queue nonce and cache generation change under the same queue guard. */
+    fun eraseAndCancel(owner:String,bookId:String,cleanupToken:String?=null) {
+        synchronized(guard) {
+            if(cleanupToken!=null && ReadingStore(context,owner).cleanupToken(bookId)!=cleanupToken)return
+            cancel(owner,bookId);cache(owner).clear(bookId)
+        }
+        OfflineEvents.changed()
+    }
+    fun finishErase(owner:String,bookId:String,token:String):Boolean = synchronized(guard) {
+        ReadingStore(context,owner).finishCleanup(bookId,token)
     }
     fun update(r:DownloadRequest,state:String,message:String) {
         synchronized(guard) {
@@ -127,7 +140,7 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
     }
     fun valid(r:DownloadRequest,client:BookHubClient):Boolean {
         val current=request(r.key)
-        return activeClient===client && activeOwner==r.owner && client.snapshot()!=null && (!r.automatic || automaticWifi()) && current?.nonce==r.nonce && current.state in listOf("QUEUED","WAITING","RUNNING")
+        return !ReadingStore(context,r.owner).cleanupPending(r.bookId) && activeClient===client && activeOwner==r.owner && client.snapshot()!=null && (!r.automatic || automaticWifi()) && current?.nonce==r.nonce && current.state in listOf("QUEUED","WAITING","RUNNING")
     }
     fun label(owner:String,bookId:String):String {
         val status=cache(owner).status(bookId);val r=request(key(owner,bookId))

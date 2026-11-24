@@ -45,7 +45,7 @@ class AppFlowTest {
             val factory = object : androidx.lifecycle.ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = ReaderViewModel(
-                    compose.activity.application, TestReadingSource(), sessionVault = MemorySessionVault()) as T
+                    compose.activity.application, TestReadingSource(), sessionVault = MemorySessionVault(),linkBookHubShelf=false) as T
             }
             val vm = androidx.lifecycle.ViewModelProvider(compose.activity, factory)[ReaderViewModel::class.java]
             compose.activity.setContent { androidx.compose.material3.MaterialTheme { ReaderApp(vm) } }

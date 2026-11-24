@@ -28,7 +28,7 @@ class OfflineControlsTest {
         compose.runOnUiThread {
             val app=ApplicationProvider.getApplicationContext<Application>();val w=OfflineFixtures();val c=w.client()
             vault=MemorySessionVault().apply{value=c.snapshot()};runtime=OfflineDownloads(app,w.network,vault,false)
-            vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{}, {BookHubClient(it,w)}),sessionVault=vault,offlineRuntime=runtime)
+            vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{}, {BookHubClient(it,w)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false)
             compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}
         }
         compose.waitUntil(15000){!vm.ui.value.shelfLoading && vm.ui.value.shelfBooks.isNotEmpty()}
@@ -45,14 +45,14 @@ class OfflineControlsTest {
         compose.runOnIdle{assertTrue(runtime.request(runtime.key(book.sourceId,book.id))!!.allowMetered)}
         compose.onNodeWithTag("shelf-book-${book.id}").performTouchInput { longClick() }
         compose.onNodeWithTag("clear-download-${book.id}").performScrollTo().performClick()
-        compose.onNodeWithText("清除副本").performClick()
+        compose.onNodeWithText("清除缓存与进度").performClick()
         compose.waitUntil(15000){runtime.request(runtime.key(book.sourceId,book.id))?.state=="CANCELLED"}
-        compose.runOnIdle{assertEquals(position,vm.store.position(book.id));assertEquals(session,vault.value);assertEquals(book.key,vm.ui.value.shelfBooks.single().key)}
+        compose.runOnIdle{assertNull(vm.store.position(book.id));assertEquals(session,vault.value);assertEquals(book.key,vm.ui.value.shelfBooks.single().key)}
     }
     @Test fun automaticWifiCanBeDisabledAndSurvivesSettingsReopen() {
         setup();compose.onNodeWithTag("tab-settings").performClick()
-        compose.onNode(isToggleable()).assertIsOn().performClick().assertIsOff()
+        compose.onNodeWithTag("automatic-wifi").performScrollTo().assertIsOn().performClick().assertIsOff()
         compose.onNodeWithTag("tab-shelf").performClick();compose.onNodeWithTag("tab-settings").performClick()
-        compose.onNode(isToggleable()).assertIsOff();compose.runOnIdle{assertFalse(runtime.automaticWifi())}
+        compose.onNodeWithTag("automatic-wifi").assertIsOff();compose.runOnIdle{assertFalse(runtime.automaticWifi())}
     }
 }

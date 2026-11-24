@@ -10,6 +10,9 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.view.RoundedCorner
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.findViewTreeLifecycleOwner
@@ -28,6 +31,7 @@ val papers = listOf(
 /** Native Android text layout; no HTML/WebView or bitmap page rendering. */
 class NativeReaderView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     var onBoundary: (Int) -> Unit = {}
+    var onBeforeTurn: () -> Boolean = {true}
     var onMenu: () -> Unit = {}
     var onPosition: (Int) -> Unit = {}
     var onVisualPosition: (Int, String?) -> Unit = { offset, _ -> onPosition(offset) }
@@ -125,12 +129,14 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
         }
     }
     override fun onDetachedFromWindow() {
+        cancelTouch()
         statusProvider?.close(); statusProvider = null
         super.onDetachedFromWindow()
     }
     internal fun updateSystemStatus(value: ReadingStatusSnapshot) { systemStatus = value; updateDescription(); invalidate() }
 
     private fun rebuild() {
+        cancelTouch()
         if (width <= 0 || height <= 0 || document.isEmpty()) {
             visualPages=emptyList();chapterLayout=null;geometry=null;footerPlacement=null;pageIndex=0;reportPage();invalidate();return
         }
@@ -175,7 +181,7 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
     }
 
     fun turn(direction: Int) {
-        if(visualPages.isEmpty()) return
+        if(visualPages.isEmpty() || !onBeforeTurn()) return
         val next = pageIndex + direction
         if (next !in visualPages.indices) { onBoundary(direction); return }
         pageIndex = next
@@ -235,48 +241,121 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
             insets.getRoundedCorner(if (bottom) RoundedCorner.POSITION_BOTTOM_RIGHT else RoundedCorner.POSITION_TOP_RIGHT)?.radius ?: 0).toFloat()
     }
 
+    private var pageInput=true
+    private var menuInput=true
+    fun setReadingInput(pageTurns:Boolean,menuClicks:Boolean) {
+        if(pageInput==pageTurns && menuInput==menuClicks)return
+        cancelTouch();pageInput=pageTurns;menuInput=menuClicks
+    }
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
         override fun onSingleTapUp(e: MotionEvent): Boolean {
-            when { e.x < width * .28f -> turn(-1); e.x > width * .72f -> turn(1); else -> performClick() }
+            when {
+                pageInput && e.x < width * .28f -> turn(-1)
+                pageInput && e.x > width * .72f -> turn(1)
+                menuInput && e.x >= width*.28f && e.x <= width*.72f -> performClick()
+            }
             return true
         }
     })
-    private var downX = 0f
-    private var downY = 0f
-    @android.annotation.SuppressLint("ClickableViewAccessibility") // GestureDetector calls performClick; scroll actions are exposed separately.
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) { downX = event.x; downY = event.y }
-        if (event.actionMasked == MotionEvent.ACTION_UP) {
-            val dx = event.x - downX; val dy = event.y - downY
-            if (kotlin.math.abs(dx) > 48 * density && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
-                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
-                gestures.onTouchEvent(cancel); cancel.recycle()
-                turn(if (dx < 0) 1 else -1)
+    private val touchSlop=ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private val swipeDistance=maxOf(24*density,touchSlop*2)
+    private var touchActive=false
+    private var tapActive=false
+    private var moved=false
+    private var axis=0 // 0 undecided, 1 horizontal, 2 vertical; intent locks for the entire gesture.
+    private var pointerId=-1
+    private var downX=0f
+    private var downY=0f
+    private var parentHeld=false
+    private val windowLocation=IntArray(2)
+    private val rootLocation=IntArray(2)
+    private fun interiorStart(x:Float):Boolean {
+        val root=rootView
+        getLocationInWindow(windowLocation);root.getLocationInWindow(rootLocation)
+        val left=(windowLocation[0]-rootLocation[0]).toFloat()
+        val insets=ViewCompat.getRootWindowInsets(this)?.getInsets(
+            WindowInsetsCompat.Type.systemGestures() or WindowInsetsCompat.Type.mandatorySystemGestures())
+        return ReaderTouchBounds.interior(width.toFloat(),maxOf(root.width.toFloat(),width+left),left,
+            (insets?.left?:0).toFloat(),(insets?.right?:0).toFloat(),24*density).contains(x)
+    }
+    private fun cancelTap(event:MotionEvent?=null) {
+        if(!tapActive)return
+        val now=android.os.SystemClock.uptimeMillis()
+        val cancel=if(event!=null)MotionEvent.obtain(event).apply{action=MotionEvent.ACTION_CANCEL}
+            else MotionEvent.obtain(now,now,MotionEvent.ACTION_CANCEL,downX,downY,0)
+        gestures.onTouchEvent(cancel);cancel.recycle();tapActive=false
+    }
+    private fun cancelTouch() {
+        cancelTap();touchActive=false;pointerId=-1;axis=0;moved=false
+        if(parentHeld){parent?.requestDisallowInterceptTouchEvent(false);parentHeld=false}
+    }
+    private fun motion(x:Float,y:Float,event:MotionEvent) {
+        val dx=kotlin.math.abs(x-downX);val dy=kotlin.math.abs(y-downY)
+        if(dx*dx+dy*dy>touchSlop*touchSlop){moved=true;cancelTap(event)}
+        if(axis==0 && moved) {
+            if(dy>=dx)axis=2
+            else if(dx>=dy*1.35f) {
+                axis=1
+                if(pageInput){parent?.requestDisallowInterceptTouchEvent(true);parentHeld=true}
+            }
+        }
+    }
+    private fun motion(event:MotionEvent):Boolean {
+        val index=event.findPointerIndex(pointerId)
+        if(index<0){cancelTouch();return false}
+        for(i in 0 until event.historySize)motion(event.getHistoricalX(index,i),event.getHistoricalY(index,i),event)
+        motion(event.getX(index),event.getY(index),event);return true
+    }
+    @android.annotation.SuppressLint("ClickableViewAccessibility") // Tap detector performs click; accessibility has explicit page actions.
+    override fun onTouchEvent(event:MotionEvent):Boolean {
+        if(event.actionMasked==MotionEvent.ACTION_DOWN) {
+            cancelTouch()
+            // Never accept the down from either system edge. No gesture exclusion rectangles are installed.
+            if((!pageInput && !menuInput) || event.pointerCount!=1 || !interiorStart(event.x))return false
+            touchActive=true;tapActive=true;pointerId=event.getPointerId(0);downX=event.x;downY=event.y
+            gestures.onTouchEvent(event);return true
+        }
+        if(!touchActive)return false
+        when(event.actionMasked) {
+            MotionEvent.ACTION_CANCEL,MotionEvent.ACTION_POINTER_DOWN,MotionEvent.ACTION_POINTER_UP->{cancelTouch();return true}
+            MotionEvent.ACTION_MOVE->{if(motion(event) && tapActive)gestures.onTouchEvent(event);return true}
+            MotionEvent.ACTION_UP->{
+                if(!motion(event))return false
+                val index=event.findPointerIndex(pointerId)
+                val dx=event.getX(index)-downX;val dy=event.getY(index)-downY
+                val direction=if(pageInput && moved && axis==1 && kotlin.math.abs(dx)>=swipeDistance && kotlin.math.abs(dx)>=kotlin.math.abs(dy)*1.35f)if(dx<0)1 else -1 else 0
+                if(tapActive)gestures.onTouchEvent(event)
+                cancelTouch() // Retire the gesture before callbacks can load another chapter or replace this view.
+                if(direction!=0)turn(direction)
                 return true
             }
         }
-        gestures.onTouchEvent(event)
         return true
     }
-    override fun performClick(): Boolean { super.performClick(); onMenu(); return true }
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_VOLUME_DOWN -> { turn(1); true }
-        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_VOLUME_UP -> { turn(-1); true }
-        else -> super.onKeyDown(keyCode, event)
+    override fun performClick():Boolean {if(!menuInput)return false;super.performClick();onMenu();return true}
+    override fun onKeyDown(keyCode:Int,event:KeyEvent?):Boolean {
+        if(!pageInput)return super.onKeyDown(keyCode,event)
+        return when(keyCode) {
+            KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_VOLUME_DOWN->{turn(1);true}
+            KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_VOLUME_UP->{turn(-1);true}
+            else->super.onKeyDown(keyCode,event)
+        }
     }
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
         info.className = "android.widget.TextView"
         info.contentDescription = "$contentDescription，${displayedProgress.chapterLabel}，${displayedProgress.bookLabel}，时间 ${systemStatus.timeLabel}，电量 ${systemStatus.batteryLabel}"
-        info.isScrollable = true
-        info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
-        info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+        info.isScrollable = pageInput
+        if(pageInput) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+        }
         info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
     }
     override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when (action) {
-        AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> { turn(1); true }
-        AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> { turn(-1); true }
+        AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> { if(pageInput){turn(1);true}else false }
+        AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> { if(pageInput){turn(-1);true}else false }
         else -> super.performAccessibilityAction(action, arguments)
     }
 }

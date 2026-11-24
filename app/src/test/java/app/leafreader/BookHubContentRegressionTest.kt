@@ -114,12 +114,12 @@ class BookHubContentRegressionTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val app: Application = ApplicationProvider.getApplicationContext()
-            val first = ReaderViewModel(app, source(Wire())); advanceUntilIdle()
+            val first = ReaderViewModel(app, source(Wire()),linkBookHubShelf=false); advanceUntilIdle()
             val book = first.ui.value.shelfBooks.single(); first.open(book); advanceUntilIdle()
             assertNull(first.ui.value.error); assertEquals("一、出发", first.ui.value.chapter!!.title)
             first.position(6); first.backToShelf()
             val wire = Wire().apply { text = "<html><body><span id='one'></span><span id='two'></span></body></html>" }
-            val cold = ReaderViewModel(app, source(wire)); advanceUntilIdle(); val saved = cold.store.position(book.id)
+            val cold = ReaderViewModel(app, source(wire),linkBookHubShelf=false); advanceUntilIdle(); val saved = cold.store.position(book.id)
             cold.open(book); advanceUntilIdle()
             assertTrue(cold.ui.value.error!!.contains("BH_EPUB_NO_TEXT")); assertEquals(saved, cold.store.position(book.id))
             wire.text = BookHubFixtures.epubText; cold.retry(); advanceUntilIdle()

@@ -44,7 +44,7 @@ class CoverShelfUiTest {
         compose.runOnUiThread {
             compose.activity.viewModelStore.clear();val app=ApplicationProvider.getApplicationContext<Application>();val runtime=OfflineDownloads(app,w.base.network,vault,false)
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory{
-                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime) as T
+                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent{MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFFA94435),background=Color(0xFFF7F3EB),surface=Color(0xFFF7F3EB),onBackground=Color(0xFF2F302A),onSurface=Color(0xFF2F302A),surfaceContainer=Color(0xFFF0EAE0))){ReaderApp(vm)}}
         }
@@ -52,7 +52,7 @@ class CoverShelfUiTest {
         compose.onNodeWithTag("shelf-placeholder-public:1",useUnmergedTree=true).assertIsDisplayed()
         compose.onNodeWithTag("tab-settings").performClick();compose.onNodeWithTag("tab-settings").assertIsSelected()
         compose.onNodeWithTag("tab-shelf").performClick();compose.runOnIdle{release.complete(Unit)}
-        compose.waitUntil(15000){(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+        compose.waitUntil(15000){compose.waitForIdle();(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
         compose.onNodeWithTag("shelf-real-cover-public:1",useUnmergedTree=true).assertIsDisplayed()
         compose.runOnIdle{assertNull(vm.ui.value.book);assertTrue(vm.ui.value.shelfBooks.all{vm.store.position(it.id)==null && vm.store.lastEnteredAt(it.id)==0L})}
         compose.runOnIdle {
@@ -60,6 +60,6 @@ class CoverShelfUiTest {
             File("build/covers013-previews").apply{mkdirs()}.resolve("real-cover-shelf.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle();w.base.network.online=false
         }
         compose.onNodeWithTag("tab-settings").performClick();compose.onNodeWithTag("tab-shelf").performClick()
-        compose.waitUntil(15000){(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+        compose.waitUntil(15000){compose.waitForIdle();(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
     }
 }

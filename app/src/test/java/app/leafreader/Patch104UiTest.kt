@@ -40,7 +40,7 @@ class Patch104UiTest {
   };WireResponse(200,payload.toByteArray())}
   val gate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)})
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,connectionGate=gate,sessionVault=vault);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}};vm.connect("https://global-ui.fixture.invalid","a","fake")}
+  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,connectionGate=gate,sessionVault=vault,linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}};vm.connect("https://global-ui.fixture.invalid","a","fake")}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading && vm.ui.value.shelfBooks.isNotEmpty()};val a=vm.ui.value.shelfBooks.single()
   compose.onNodeWithTag("tab-shelf").performClick();node(a).performClick();compose.waitUntil(10000){reader()!=null};compose.runOnIdle{reader()!!.turn(1);reader()!!.performClick()}
   val position=vm.positionOf(a);assertTrue(position!!.offset>0)
@@ -48,7 +48,7 @@ class Patch104UiTest {
   val before=calls.size;node(a).performClick();compose.waitUntil(10000){vm.ui.value.error!=null};assertEquals(before,calls.size);assertEquals(position,vm.positionOf(a));compose.onNodeWithText("返回书架").performClick()
   compose.runOnIdle{vm.connect("https://global-ui.fixture.invalid","b","fake")};compose.waitUntil(10000){!vm.ui.value.shelfLoading && vm.ui.value.shelfBooks.size==2};compose.onNodeWithTag("tab-shelf").performClick()
   val b=vm.ui.value.shelfBooks.single{it.sourceId==vm.store.sourceId};node(a).assertExists();node(b).assertExists();assertNull(vm.positionOf(b))
-  compose.runOnUiThread{val cold=ReaderViewModel(compose.activity.application,connectionGate=gate,sessionVault=vault);compose.activity.setContent{MaterialTheme{ReaderApp(cold)}}}
+  compose.runOnUiThread{val cold=ReaderViewModel(compose.activity.application,connectionGate=gate,sessionVault=vault,linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(cold)}}}
   compose.waitUntil(10000){compose.onAllNodes(SemanticsMatcher.expectValue(SavedBookIdentity,a.key)).fetchSemanticsNodes().isNotEmpty()};node(a).assertExists();node(b).assertExists()
  }
  @Test fun independentlyOwnedFileNativePagesResumeWithNoLoginAndNoShippedDemo() {
@@ -60,10 +60,10 @@ class Patch104UiTest {
   }
   val book=Book("owned","自有合成资料","自写作者","","",1,0,sourceId=provider.id);ReadingStore(compose.activity,provider.id).addToShelf(book)
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,sessionVault=MemorySessionVault(),independentSources=listOf(provider));compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,sessionVault=MemorySessionVault(),independentSources=listOf(provider),linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading};node(book).performClick();compose.waitUntil(10000){reader()!=null}
   compose.runOnIdle{assertTrue(reader()!!.pageCount>2);reader()!!.turn(1)};val position=vm.positionOf(book)!!
-  compose.runOnUiThread{val cold=ReaderViewModel(compose.activity.application,sessionVault=MemorySessionVault(),independentSources=listOf(provider));compose.activity.setContent{MaterialTheme{ReaderApp(cold)}}}
+  compose.runOnUiThread{val cold=ReaderViewModel(compose.activity.application,sessionVault=MemorySessionVault(),independentSources=listOf(provider),linkBookHubShelf=false);compose.activity.setContent{MaterialTheme{ReaderApp(cold)}}}
   node(book).performClick();compose.waitUntil(10000){reader()!=null};compose.runOnIdle{assertEquals(position.offset,reader()!!.currentOffset)}
  }
 }

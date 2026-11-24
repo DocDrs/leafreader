@@ -32,7 +32,7 @@ class PaperTuningPreviewTest {
             "雨停了，窗边的树叶还留着水珠。我把书放在桌上，纸页接住了午后的光。",
             "风从半开的窗吹进来，翻过一页，又轻轻停住。走廊里传来脚步声，很快就远了。",
             "我沿着刚才的句子继续读。字与字之间留有呼吸的空隙，深浅的纸纹安静地留在背后。",
-            "这是一段自写的测试正文，只用来核对纸色、颗粒、明暗和阅读对比，不包含外部书籍内容。"
+            "这是一段自写的测试正文，只用来核对纸色、颗粒、明暗和阅读对比，不来自参考截图。"
         )[i%4]})
     }
     private fun find(v:View):NativeReaderView? {if(v is NativeReaderView)return v;if(v is ViewGroup)for(i in 0 until v.childCount)find(v.getChildAt(i))?.let{return it};return null}
@@ -41,7 +41,7 @@ class PaperTuningPreviewTest {
         compose.runOnUiThread {
             compose.activity.viewModelStore.clear()
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory{
-                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault()) as T
+                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             vm.settings(ReaderSettings(18f,1.55f,4,14f,20f,16f))
             compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}

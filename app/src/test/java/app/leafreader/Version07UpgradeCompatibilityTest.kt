@@ -41,7 +41,7 @@ class Version07UpgradeCompatibilityTest {
                     else->BookHubFixtures.secondText
                 };WireResponse(200,text.toByteArray())
             })})
-            val vm=ReaderViewModel(app,connectionGate=gate,sessionVault=EncryptedSessionVault(app,UpgradeCipher()));advanceUntilIdle()
+            val vm=ReaderViewModel(app,connectionGate=gate,sessionVault=EncryptedSessionVault(app,UpgradeCipher()),linkBookHubShelf=false);advanceUntilIdle()
             assertTrue(vm.ui.value.remote);assertNull(vm.ui.value.shelfError);vm.loadShelf();advanceUntilIdle();assertNotNull(vm.ui.value.shelfError);assertEquals(0,logins)
             assertEquals(expected.getString("sourceId"),vm.store.sourceId);assertEquals(6,vm.store.position("public:2")!!.offset);assertEquals(123,vm.store.position("public:1")!!.offset)
             assertEquals(ReaderSettings(28f,1.8f,4,24f,38f,40f),vm.ui.value.settings)

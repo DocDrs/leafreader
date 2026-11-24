@@ -88,27 +88,27 @@ class SessionRecoveryTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val vault = MemorySessionVault(); val wire = Wire()
-            val first = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
+            val first = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             first.connect(origin, "fixture-user", "fixture-password"); advanceUntilIdle()
             assertEquals(1, wire.logins); assertNotNull(vault.value)
             val keys = first.ui.value.shelfBooks.map { it.key }.toSet()
             wire.offline = true
-            val cold = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
+            val cold = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             assertTrue(cold.ui.value.remote); assertNull(cold.ui.value.shelfError); cold.loadShelf();advanceUntilIdle();assertNotNull(cold.ui.value.shelfError); assertNotNull(vault.value)
             assertEquals(keys, cold.ui.value.shelfBooks.map { it.key }.toSet()); assertEquals(1, wire.logins)
             wire.offline = false; wire.expire = true; cold.loadShelf(); advanceUntilIdle()
             assertEquals(1, wire.refreshes); assertEquals("fixture-access-new", vault.value!!.accessToken)
-            val again = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
+            val again = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             assertTrue(again.ui.value.remote); assertEquals(1, wire.refreshes); assertEquals(1, wire.logins)
             again.signOut(); advanceUntilIdle(); assertNull(vault.value)
-            assertFalse(ReaderViewModel(app, local, wire.gate(), vault).ui.value.remote)
+            assertFalse(ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false).ui.value.remote)
         } finally { Dispatchers.resetMain() }
     }
 
     @Test fun ordinaryPermissionDenialKeepsSessionButRevocationClearsTokensAndPreservesShelf() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val vault = MemorySessionVault(); val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
+            val vault = MemorySessionVault(); val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             vm.connect(origin, "fixture-user", "fixture-password"); advanceUntilIdle()
             val keys = vm.ui.value.shelfBooks.map { it.key }
             wire.deny = true; vm.loadShelf(); advanceUntilIdle(); assertNotNull(vault.value); assertEquals(keys, vm.ui.value.shelfBooks.map { it.key })
@@ -121,7 +121,7 @@ class SessionRecoveryTest {
     @Test fun refreshNetworkFailureKeepsTokensButExpiredRefreshRequiresReloginWithoutDeletingBooks() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val vault = MemorySessionVault(); val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), vault); advanceUntilIdle()
+            val vault = MemorySessionVault(); val wire = Wire(); val vm = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             vm.connect(origin, "fixture", "fixture-password"); advanceUntilIdle()
             val keys = vm.ui.value.shelfBooks.map { it.key }; wire.expire = true; wire.refreshNetworkFailure = true
             vm.loadShelf(); advanceUntilIdle(); assertNotNull(vault.value); assertEquals(1, wire.refreshes)
@@ -137,7 +137,7 @@ class SessionRecoveryTest {
             val vault = MemorySessionVault(); val wire = Wire()
             val factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = ReaderViewModel(app, local, wire.gate(), vault) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = ReaderViewModel(app, local, wire.gate(), vault,linkBookHubShelf=false) as T
             }
             val retained = ViewModelStore()
             val before = ViewModelProvider(retained, factory)[ReaderViewModel::class.java]; advanceUntilIdle()
@@ -184,7 +184,7 @@ class SessionRecoveryTest {
                 entered.complete(Unit); withContext(NonCancellable) { release.await() }
                 WireResponse(200, BookHubFixtures.envelope(BookHubFixtures.session()).toByteArray())
             }).also(clients::add) })
-            val vm = ReaderViewModel(app, local, gate, vault); advanceUntilIdle()
+            val vm = ReaderViewModel(app, local, gate, vault,linkBookHubShelf=false); advanceUntilIdle()
             vm.connect(origin, "fixture", "fixture-password"); runCurrent(); entered.await()
             vm.signOut(); release.complete(Unit); advanceUntilIdle()
             assertFalse(vm.ui.value.remote); assertNull(vault.value); assertNull(clients.single().snapshot())
@@ -201,7 +201,7 @@ class SessionRecoveryTest {
                 override fun save(session: SavedSession) = false
                 override fun clear() {}
             }
-            val vm = ReaderViewModel(app, local, Wire().gate(), vault); advanceUntilIdle()
+            val vm = ReaderViewModel(app, local, Wire().gate(), vault,linkBookHubShelf=false); advanceUntilIdle()
             assertFalse(vm.ui.value.remote); assertEquals(18, vm.store.position("local")!!.offset)
             assertTrue(vm.ui.value.notice!!.contains("无法解密")); assertEquals(setOf("local"), vm.ui.value.shelfBooks.map { it.id }.toSet())
         } finally { Dispatchers.resetMain() }
@@ -220,7 +220,7 @@ class SessionRecoveryTest {
                 }
                 WireResponse(200, text.toByteArray())
             }) })
-            val vm = ReaderViewModel(app, local, gate, vault); advanceUntilIdle()
+            val vm = ReaderViewModel(app, local, gate, vault,linkBookHubShelf=false); advanceUntilIdle()
             vm.connect(origin, "fixture", "fixture-password"); advanceUntilIdle()
             val remote = vm.ui.value.shelfBooks.single { it.id == "public:1" }; val accountStore = vm.store
             vm.open(remote); runCurrent(); entered.await(); vm.signOut(); release.complete(Unit); advanceUntilIdle()

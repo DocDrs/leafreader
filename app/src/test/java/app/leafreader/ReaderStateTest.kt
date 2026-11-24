@@ -33,7 +33,7 @@ class ReaderStateTest {
     @Test fun crossChapterDirectoryAndColdViewModelResume() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val source = Source(); val vm = ReaderViewModel(app, source)
+            val source = Source(); val vm = ReaderViewModel(app, source,linkBookHubShelf=false)
             advanceUntilIdle(); vm.open(book, "a"); advanceUntilIdle()
             vm.boundary(1); advanceUntilIdle(); assertEquals("b", vm.ui.value.chapter!!.id)
             assertEquals(0, vm.ui.value.offset)
@@ -41,7 +41,7 @@ class ReaderStateTest {
             assertEquals(vm.ui.value.chapter!!.text.lastIndex, vm.ui.value.offset)
             vm.jump("b"); advanceUntilIdle(); assertEquals(0, vm.ui.value.offset)
             vm.position(123); vm.backToShelf()
-            val cold = ReaderViewModel(app, source); advanceUntilIdle()
+            val cold = ReaderViewModel(app, source,linkBookHubShelf=false); advanceUntilIdle()
             cold.open(book); advanceUntilIdle()
             assertEquals("b", cold.ui.value.chapter!!.id); assertEquals(123, cold.ui.value.offset)
         } finally { Dispatchers.resetMain() }
@@ -50,7 +50,7 @@ class ReaderStateTest {
     @Test fun failedChapterDoesNotOverwriteProgressAndRetryReturnsToRequestedChapter() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val source = Source(); val vm = ReaderViewModel(app, source)
+            val source = Source(); val vm = ReaderViewModel(app, source,linkBookHubShelf=false)
             advanceUntilIdle(); vm.open(book, "a"); advanceUntilIdle(); vm.position(80)
             source.failChapter = true; vm.jump("b"); advanceUntilIdle()
             assertNotNull(vm.ui.value.error)
@@ -81,7 +81,7 @@ class ReaderStateTest {
                 override suspend fun chapters(bookId: String) = emptyList<ChapterRef>()
                 override suspend fun chapter(bookId: String, chapterId: String) = error("unused")
             }
-            val vm = ReaderViewModel(app, paged); advanceUntilIdle();vm.search("灯");advanceUntilIdle()
+            val vm = ReaderViewModel(app, paged,linkBookHubShelf=false); advanceUntilIdle();vm.search("灯");advanceUntilIdle()
             vm.loadMore(); advanceUntilIdle(); assertEquals(2, vm.ui.value.books.size)
             failing = true; vm.loadMore(); advanceUntilIdle()
             assertEquals(2, vm.ui.value.books.size); assertNotNull(vm.ui.value.error)

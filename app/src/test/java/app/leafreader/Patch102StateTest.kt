@@ -1,5 +1,7 @@
 package app.leafreader
 
+import kotlinx.coroutines.flow.first
+
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import app.leafreader.data.*
@@ -32,7 +34,7 @@ class Patch102StateTest {
  @Test fun failedBoundaryCanReturnAndContinueButAuthCannotRestoreReadablePage()=runTest {
   Dispatchers.setMain(StandardTestDispatcher(testScheduler))
   try {
-   val s=Source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault());advanceUntilIdle();vm.open(vm.ui.value.shelfBooks.single());advanceUntilIdle();vm.position(23)
+   val s=Source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.open(vm.ui.value.shelfBooks.single());advanceUntilIdle();vm.position(23)
    val saved=vm.store.position("book");s.failure=FailureKind.NETWORK;vm.boundary(1);advanceUntilIdle()
    assertNotNull(vm.ui.value.error);assertTrue(vm.ui.value.canReturnPage);assertEquals(saved,vm.store.position("book"))
    vm.returnReadablePage();assertNull(vm.ui.value.error);assertEquals(23,vm.ui.value.offset);vm.position(31);assertEquals(31,vm.store.position("book")!!.offset)
@@ -42,7 +44,7 @@ class Patch102StateTest {
  @Test fun normalDirectoryAndSelectionReuseListAndInvalidPositionNeedsExplicitRecovery()=runTest {
   Dispatchers.setMain(StandardTestDispatcher(testScheduler))
   try {
-   val s=Source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault());advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
+   val s=Source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();val book=vm.ui.value.shelfBooks.single()
    vm.store.save(book.id,"removed",99);val old=vm.store.position(book.id);vm.open(book);advanceUntilIdle();assertTrue(vm.ui.value.error!!.contains("BH_VERSION"));assertEquals(old,vm.store.position(book.id))
    vm.chapterList(book);assertEquals(1,s.lists)
    vm.open(book,"b");advanceUntilIdle();assertEquals(1,s.lists);assertEquals("b",vm.store.position(book.id)!!.chapterId)
@@ -56,7 +58,7 @@ class Patch102StateTest {
    val old=SavedSession("https://original.fixture.invalid","old","device","access","refresh")
    val vault=MemorySessionVault().apply{value=old};var reject=true
    val wire=WireTransport{uri,_,_,body,_->if(uri.path.endsWith("/auth/login")){if(reject)throw SourceProblem(FailureKind.NETWORK,"合成超时");envelope(BookHubFixtures.session("new"))}else envelope(BookHubFixtures.page())}
-   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault)
+   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,linkBookHubShelf=false)
    advanceUntilIdle();val owner=vm.store.sourceId;vm.store.save("public:1","chapter",19)
    vm.connect("https://new.fixture.invalid","new","fake");advanceUntilIdle();assertEquals(old,vault.value);assertEquals(owner,vm.store.sourceId)
    vm.cancelConnection();assertEquals(old,vault.value);reject=false;vm.connect("https://new.fixture.invalid","new","fake");advanceUntilIdle()
@@ -71,7 +73,7 @@ class Patch102StateTest {
    ReadingStore(app,canonicalOwner).save("public:1","canonical-conflict",99)
    val vault=MemorySessionVault().apply{value=session};val wire=WireTransport{uri,_,_,_,_->envelope(if(uri.path.endsWith("/auth/login"))BookHubFixtures.session("same")else BookHubFixtures.page())}
    val manager=OfflineDownloads(app,AlwaysOnline,vault,false)
-   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=manager)
+   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=manager,linkBookHubShelf=false)
    runCurrent();val owner=vm.store.sourceId;assertEquals("bookhub-v1-"+digest(raw+"|same").take(32),owner)
    val b=vm.ui.value.shelfBooks.single();vm.store.save(b.id,"kept",41);vm.download(b);val key=manager.key(owner,b.id);val nonce=manager.request(key)!!.nonce
    vm.connect("https://alias.fixture.invalid","same","fake");runCurrent()
@@ -91,11 +93,11 @@ class Patch102StateTest {
     else->BookHubFixtures.page().put("hasMore",true).put("nextCursor","next")
    })}
    val vault=MemorySessionVault().apply{value=SavedSession("https://search102.fixture.invalid","account","d","a","r")}
-   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault);runCurrent();vm.search("词");runCurrent()
+   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,linkBookHubShelf=false);runCurrent();vm.search("词");runCurrent()
    assertFalse(vm.ui.value.findLoading);assertEquals(1,vm.ui.value.books.size);val result=vm.ui.value.books.single();assertFalse(vm.canAddBook(result));assertFalse(vm.addToShelf(result))
    more.complete(Unit);advanceUntilIdle();assertTrue(vm.ui.value.books.isEmpty());assertTrue(vm.ui.value.shelfKnownComplete)
-   vm.removeFromShelf(setOf(result.key),vm.ui.value.connectionRevision);vm.search("词");advanceUntilIdle();assertTrue(vm.canAddBook(vm.ui.value.books.single()));assertTrue(vm.addToShelf(vm.ui.value.books.single()))
-   vm.refreshShelf();runCurrent();assertFalse(vm.ui.value.shelfKnownComplete);assertFalse(vm.canAddBook(result.copy(id="public:3")))
+   vm.removeFromShelf(setOf(result.key),vm.ui.value.connectionRevision);vm.ui.first{it.clearingBooks.isEmpty() && !vm.cleanupPending(result)};vm.search("词");advanceUntilIdle();assertTrue(vm.canAddBook(vm.ui.value.books.single()));assertTrue(vm.addToShelf(vm.ui.value.books.single()))
+   vm.refreshShelf();runCurrent();assertTrue(vm.ui.value.shelfKnownComplete);assertTrue(vm.canAddBook(result.copy(id="public:3")));assertEquals("SUCCESS",vm.shelfUpdateRecord().state)
   }finally{Dispatchers.resetMain()}
  }
  @Test fun readdUpdatesMetadataWithoutChangingSavedPosition() {
@@ -107,21 +109,21 @@ class Patch102StateTest {
   Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
   try {
    val wire=OfflineFixtures();val c=wire.client();val vault=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,wire.network,vault,false)
-   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime)
+   val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false)
    val b=vm.ui.value.shelfBooks.single();val cache=runtime.cache(b.sourceId);val manifest=wire.manifest();val epoch=cache.generation(b.id)
    cache.saveManifest(b.id,manifest,epoch);wire.bytes().forEach{(id,bytes)->cache.put(b.id,wire.version,id,bytes,epoch)};assertTrue(cache.complete(b.id,manifest,epoch))
-   vm.store.save(b.id,"kept",37);val position=vm.store.position(b.id);vm.removeFromShelf(setOf(b.key),vm.ui.value.connectionRevision)
+   vm.store.save(b.id,"kept",37);val position=vm.store.position(b.id);vm.store.hideFromShelf(setOf(b.id));vm.loadShelf()
    assertTrue(vm.ui.value.shelfBooks.isEmpty());assertEquals(b.key,vm.managementBooks().single().key)
    val count=wire.calls.size;assertTrue(vm.inspectDownload(b).complete);assertNull(runtime.request(runtime.key(b.sourceId,b.id)));assertEquals(count,wire.calls.size)
    vm.clearDownload(b);withContext(Dispatchers.IO){withTimeout(5000){while(cache.manifest(b.id)!=null)delay(10)}}
-   assertFalse(vm.inspectDownload(b).complete);assertEquals(position,vm.store.position(b.id));assertEquals(count,wire.calls.size)
+   assertFalse(vm.inspectDownload(b).complete);assertNull(vm.store.position(b.id));assertEquals(count,wire.calls.size)
    assertTrue(vm.managementBooks().isEmpty())
   }finally{Dispatchers.resetMain()}
  }
  @Test fun shelfRefreshCannotStealReadingFailureRetry()=runTest {
   Dispatchers.setMain(StandardTestDispatcher(testScheduler))
   try {
-   val source=Source();val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.open(vm.ui.value.shelfBooks.single());advanceUntilIdle()
+   val source=Source();val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.open(vm.ui.value.shelfBooks.single());advanceUntilIdle()
    source.failure=FailureKind.NETWORK;vm.boundary(1);advanceUntilIdle();assertNotNull(vm.ui.value.error)
    vm.loadShelf();advanceUntilIdle();source.failure=null;vm.retry();advanceUntilIdle()
    assertNull(vm.ui.value.error);assertEquals("b",vm.ui.value.chapter!!.id)

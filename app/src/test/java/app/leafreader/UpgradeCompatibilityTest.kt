@@ -57,7 +57,7 @@ class UpgradeCompatibilityTest {
         try {
             val before=snapshots();val cipher=UpgradeCipher();val vault=EncryptedSessionVault(app,cipher)
             assertTrue(vault.load() is SessionLoad.Ready)
-            val wire=Wire();val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=vault);advanceUntilIdle()
+            val wire=Wire();val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=vault,linkBookHubShelf=false);advanceUntilIdle()
             assertTrue(vm.ui.value.remote);assertNull(vm.ui.value.shelfError);vm.loadShelf();advanceUntilIdle();assertNotNull(vm.ui.value.shelfError);assertEquals(0,wire.logins)
             assertFalse(cipher.forgotten);assertEquals(settings,vm.ui.value.settings)
             assertEquals("https://upgrade.fixture.invalid",vm.ownOrigin());assertEquals(expected.getString("sourceId"),vm.store.sourceId)
@@ -75,7 +75,7 @@ class UpgradeCompatibilityTest {
             vm.open(books.single{it.id=="public:1"});advanceUntilIdle()
             assertNull(vm.ui.value.error);assertNotNull(vm.ui.value.chapter);assertEquals(123,vm.ui.value.offset)
             assertEquals(expected.getString("chapterId"),vm.ui.value.chapter!!.id)
-            val cold=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=EncryptedSessionVault(app,UpgradeCipher()));advanceUntilIdle()
+            val cold=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=EncryptedSessionVault(app,UpgradeCipher()),linkBookHubShelf=false);advanceUntilIdle()
             assertEquals(settings,cold.ui.value.settings);assertTrue(cold.ui.value.remote);assertEquals(0,wire.logins)
             assertEquals(123,cold.store.position("public:1")!!.offset)
         }finally{Dispatchers.resetMain()}
@@ -84,7 +84,7 @@ class UpgradeCompatibilityTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val old=ReadingStore(app,RetiredBundledBooks.SOURCE_ID)
-            val vm=ReaderViewModel(app,sessionVault=MemorySessionVault());advanceUntilIdle()
+            val vm=ReaderViewModel(app,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle()
             assertFalse(vm.ui.value.remote);assertEquals(setOf("retained-local-1","public:1","local-added","mountain-letter-v1","bookhub-same-title","other-account-book"),vm.ui.value.shelfBooks.map{it.id}.toSet());assertTrue(vm.ui.value.books.isEmpty())
             assertEquals(2,old.savedServiceShelf().size);assertNotNull(old.position("mountain-letter-v1"));assertNotNull(old.position("night-log-v1"))
             vm.loadShelf();vm.selectTab("find");vm.search("");advanceUntilIdle();assertTrue(vm.ui.value.books.isEmpty())
@@ -98,7 +98,7 @@ class UpgradeCompatibilityTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val wire=Wire().apply{offline=false;revoke=true};val vault=EncryptedSessionVault(app,UpgradeCipher())
-            val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=vault);advanceUntilIdle();vm.loadShelf();advanceUntilIdle()
+            val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=vault,linkBookHubShelf=false);advanceUntilIdle();vm.loadShelf();advanceUntilIdle()
             assertEquals(SessionLoad.Empty,vault.load());assertNull(vm.ui.value.notice);assertTrue(vm.ui.value.sourceLabel.contains("重新登录"))
             assertEquals(settings,vm.ui.value.settings);assertNotNull(vm.store.position("public:1"));assertEquals(6,vm.ui.value.shelfBooks.size)
             assertTrue(vm.ui.value.shelfBooks.none(RetiredBundledBooks::contains))
@@ -107,7 +107,7 @@ class UpgradeCompatibilityTest {
     @Test fun sameAccountReloginAndOtherAccountKeepTheirOldNamespaces()=runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val wire=Wire().apply{offline=false};val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=EncryptedSessionVault(app,UpgradeCipher()));advanceUntilIdle()
+            val wire=Wire().apply{offline=false};val vm=ReaderViewModel(app,connectionGate=wire.gate(),sessionVault=EncryptedSessionVault(app,UpgradeCipher()),linkBookHubShelf=false);advanceUntilIdle()
             val accountA=vm.store;vm.connect("https://upgrade.fixture.invalid","fixture","fixture-password");advanceUntilIdle()
             assertEquals(expected.getString("sourceId"),vm.store.sourceId);assertEquals(123,vm.store.position("public:1")!!.offset)
             wire.account="other-account";vm.connect("https://upgrade.fixture.invalid","fixture2","fixture-password");advanceUntilIdle()

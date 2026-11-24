@@ -87,7 +87,7 @@ class EpubRasterRegressionTest {
     @Test fun imageErrorsAreNotSwallowedAsAnEmptyPrefaceAndProgressIsUntouched()=runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         try {
-            val w=Wire().apply{imageOnly();imageStatus=503};val s=w.source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault())
+            val w=Wire().apply{imageOnly();imageStatus=503};val s=w.source();val vm=ReaderViewModel(app,s,sessionVault=MemorySessionVault(),linkBookHubShelf=false)
             val book=vm.ui.first{!it.shelfLoading}.shelfBooks.single();vm.open(book)
             vm.ui.first{!it.loading};assertNotNull(vm.ui.value.error);assertNull(vm.store.position(book.id))
             assertEquals(1,w.requests.count{it.endsWith("/pic")})
@@ -129,11 +129,11 @@ class EpubRasterRegressionTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         try {
             val w=Wire().apply{imageOnly(svg=true)}
-            val first=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault())
+            val first=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false)
             val book=first.ui.first{!it.shelfLoading}.shelfBooks.single();first.open(book);first.ui.first{!it.loading}
             assertNull(first.ui.value.error);val graphic=first.ui.value.graphicId;assertNotNull(graphic)
             first.settings(ReaderSettings(fontSp=29f,palette=4));first.backToShelf()
-            val second=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault());second.ui.first{!it.shelfLoading}
+            val second=ReaderViewModel(app,w.source(),sessionVault=MemorySessionVault(),linkBookHubShelf=false);second.ui.first{!it.shelfLoading}
             second.open(book);second.ui.first{!it.loading};assertNull(second.ui.value.error)
             assertEquals(graphic,second.ui.value.graphicId);assertEquals(29f,second.ui.value.settings.fontSp);assertEquals(4,second.ui.value.settings.palette)
             val saved=second.store.position(book.id)

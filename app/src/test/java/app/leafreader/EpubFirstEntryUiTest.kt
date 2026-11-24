@@ -48,7 +48,7 @@ class EpubFirstEntryUiTest {
         compose.runOnUiThread {
             compose.activity.viewModelStore.clear()
             val factory=object:ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST") override fun <T:ViewModel> create(modelClass:Class<T>):T = ReaderViewModel(compose.activity.application,BookHubSource(client),sessionVault=MemorySessionVault()).also{vm=it} as T
+                @Suppress("UNCHECKED_CAST") override fun <T:ViewModel> create(modelClass:Class<T>):T = ReaderViewModel(compose.activity.application,BookHubSource(client),sessionVault=MemorySessionVault(),linkBookHubShelf=false).also{vm=it} as T
             }
             vm=ViewModelProvider(compose.activity,factory)[ReaderViewModel::class.java]
             compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}

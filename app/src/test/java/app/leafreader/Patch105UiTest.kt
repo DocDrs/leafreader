@@ -33,7 +33,7 @@ class Patch105UiTest {
   val cache=runtime.cache(owner);for(book in books.take(120)){val m=w.manifest().put("bookId",book.id);cache.saveManifest(book.id,m,cache.generation(book.id))}
   val other=BookHubSource.ownerId(w.client("other"));val otherBook=b("public:1",other).copy(title="别的账号隐藏书不可见");ReadingStore(app,other).addToShelf(otherBook);ReadingStore(app,other).hideFromShelf(setOf(otherBook.id));runtime.cache(other).saveManifest(otherBook.id,w.manifest(),0)
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime);vm.selectTab("settings");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);vm.selectTab("settings");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){compose.onAllNodesWithTag("offline-total-bytes").fetchSemanticsNodes().isNotEmpty()}
   compose.onNodeWithText("管理离线副本与失败任务").assertDoesNotExist();compose.onNodeWithText(books[120].title).assertDoesNotExist();compose.onNodeWithText(books[0].title).assertDoesNotExist()
   compose.onNodeWithTag("offline-management").performScrollTo().performClick()
@@ -46,22 +46,22 @@ class Patch105UiTest {
  @Test fun completeSingleBookMoreHasNoRedownloadAndClearRequiresConfirmationThenUpdatesMenu() {
   val app=compose.activity.application;val w=OfflineFixtures();val c=w.client();val owner=BookHubSource.ownerId(c);val vault=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,vault,false);val book=b("public:1",owner);val st=ReadingStore(app,owner);st.addToShelf(book);st.save(book.id,"kept",17);seed(runtime,owner,w);w.network.online=false
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime);runtime.enqueue(owner,book);runtime.update(runtime.request(runtime.key(owner,book.id))!!,"FAILED","合成重新下载失败，旧副本保留");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);runtime.enqueue(owner,book);runtime.update(runtime.request(runtime.key(owner,book.id))!!,"FAILED","合成重新下载失败，旧副本保留");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading};val position=st.position(book.id)
-  row(book).performTouchInput{longClick()};compose.waitUntil(10000){compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("完整性已核验")}}
-  compose.onNodeWithTag("download-status-${book.id}").assertTextContains("已下载",substring=true)
-  compose.onNodeWithTag("download-copy-${book.id}").assertTextContains("最近任务失败",substring=true)
+  row(book).performTouchInput{longClick()};compose.waitUntil(10000){compose.onAllNodesWithTag("download-status-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("完整缓存")}}
+  compose.onNodeWithTag("download-status-${book.id}").assertTextContains("完整缓存",substring=true)
+  compose.onNodeWithTag("download-copy-${book.id}").assertDoesNotExist()
   compose.onNodeWithTag("download-book-${book.id}").assertDoesNotExist();assertNull(vm.ui.value.book)
   compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("取消").performClick();assertTrue(runtime.cache(owner).status(book.id,true).complete)
-  compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
-  compose.waitUntil(10000){compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("本机暂无完整副本")}}
-  compose.onNodeWithTag("download-book-${book.id}").assertExists();assertEquals(position,st.position(book.id));assertTrue(vm.isOnShelf(book));assertEquals(0,w.calls.size)
+  compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除缓存与进度").performClick()
+  compose.waitUntil(10000){compose.onAllNodesWithTag("download-book-${book.id}").fetchSemanticsNodes().isNotEmpty()}
+  compose.onNodeWithTag("download-book-${book.id}").assertExists();assertNull(st.position(book.id));assertTrue(vm.isOnShelf(book));assertEquals(0,w.calls.size)
  }
  @Test fun failedPartialRetryIsExplicitKeepsBytesAndUsesWifiDefaultAndCancelStaysInMenu() {
   val app=compose.activity.application;val w=OfflineFixtures();val c=w.client();val owner=BookHubSource.ownerId(c);val vault=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,vault,false);val book=b("public:1",owner);val st=ReadingStore(app,owner);st.addToShelf(book);st.save(book.id,"kept",29)
   val cache=runtime.cache(owner);val m=w.manifest();cache.saveManifest(book.id,m,0);val bytes=w.bytes().getValue("a");cache.put(book.id,w.version,"a",bytes,0);w.network.online=false
   lateinit var vm:ReaderViewModel
-  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime);runtime.enqueue(owner,book);runtime.update(runtime.request(runtime.key(owner,book.id))!!,"FAILED","合成网络失败");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
+  compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);runtime.enqueue(owner,book);runtime.update(runtime.request(runtime.key(owner,book.id))!!,"FAILED","合成网络失败");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){!vm.ui.value.shelfLoading};val old=runtime.request(runtime.key(owner,book.id))!!;val position=st.position(book.id)
   row(book).performTouchInput{longClick()};compose.waitUntil(10000){compose.onAllNodesWithTag("download-book-${book.id}").fetchSemanticsNodes().isNotEmpty()}
   compose.onNodeWithTag("download-status-${book.id}").assertTextContains("下载失败",substring=true);compose.onNodeWithTag("download-book-${book.id}").performClick();assertEquals(old.nonce,runtime.request(old.key)!!.nonce)

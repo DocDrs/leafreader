@@ -36,7 +36,7 @@ fun SourceConnectionDialog(state: ReaderState, ownOrigin: String, dismiss: () ->
     val selectedTarget = target(selected)
     val canConnect = selectedTarget != null && reviewed == selectedTarget.value && authorized
     Dialog(onDismissRequest = { password = ""; dismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFFF7F3EB)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (editing) "编辑书源地址" else "BookHub 登录", fontSize = 22.sp, modifier = Modifier.weight(1f))

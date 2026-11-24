@@ -47,7 +47,7 @@ class Patch106UiTest {
   if(complete)assertTrue(cache.complete(book.id,m,0))
   w.network.online=false
   compose.runOnUiThread{
-   vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,w)}),sessionVault=vault,offlineRuntime=runtime)
+   vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,w)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false)
    if(failed){runtime.enqueue(owner,book);runtime.update(runtime.request(runtime.key(owner,book.id))!!,"FAILED","网络暂不可用，已保存内容保留")}
    compose.activity.setContent {
     MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFFA94435),background=Color(0xFFF7F3EB),surface=Color(0xFFF7F3EB),onBackground=Color(0xFF2F302A),onSurface=Color(0xFF2F302A),surfaceContainer=Color(0xFFF0EAE0))){ReaderApp(vm)}
@@ -57,7 +57,7 @@ class Patch106UiTest {
  }
  private fun open() {
   compose.onNode(SemanticsMatcher.expectValue(SavedBookIdentity,book.key)).performTouchInput{longClick()}
-  compose.waitUntil(10000){compose.onAllNodesWithTag("shelf-book-actions").fetchSemanticsNodes().isNotEmpty() && compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{!it.config.toString().contains("正在检查")}}
+  compose.waitUntil(10000){compose.waitForIdle();compose.onAllNodesWithTag("shelf-book-actions").fetchSemanticsNodes().isNotEmpty() && compose.onAllNodesWithTag("download-status-${book.id}").fetchSemanticsNodes().any{!it.config.toString().contains("读取缓存状态")}}
   compose.mainClock.advanceTimeBy(1000);compose.waitForIdle()
  }
  private fun capture(name:String) {
@@ -72,7 +72,8 @@ class Patch106UiTest {
  }}
  @Test fun completeSheetIsCompactAndLocalVerificationKeepsTheCopyAndProgress() {
   setup();open();val position=vm.positionOf(book);val count=w.calls.size
-  compose.onNodeWithTag("book-actions-title").assertTextEquals(book.title);compose.onNodeWithTag("download-status-${book.id}").assertTextEquals("已下载")
+  compose.waitUntil(10000){compose.onAllNodesWithText("完整缓存").fetchSemanticsNodes().isNotEmpty()}
+  compose.onNodeWithTag("book-actions-title").assertTextEquals(book.title);compose.onNodeWithTag("download-status-${book.id}").assertTextEquals("完整缓存")
   compose.onNodeWithTag("download-book-${book.id}").assertDoesNotExist();compose.onNodeWithText("目录").assertDoesNotExist()
   val bounds=compose.onNodeWithTag("shelf-book-actions").fetchSemanticsNode().boundsInRoot
   compose.runOnUiThread {
@@ -96,7 +97,7 @@ class Patch106UiTest {
   val titleBounds=compose.onNodeWithTag("book-actions-title").fetchSemanticsNode().boundsInRoot
   println("SHEET_GEOMETRY root=$bounds title=$titleBounds screen=${compose.activity.window.decorView.width}x${compose.activity.window.decorView.height}")
   assertTrue("content-sized sheet should leave backdrop visible",titleBounds.top>compose.activity.window.decorView.height*.2f)
-  compose.onNodeWithTag("verify-download-${book.id}").performClick();compose.waitUntil(10000){compose.onAllNodesWithTag("download-check-result-${book.id}").fetchSemanticsNodes().isNotEmpty() && compose.onAllNodesWithText("已下载").fetchSemanticsNodes().isNotEmpty()}
+  compose.onNodeWithTag("verify-download-${book.id}").assertDoesNotExist()
   assertEquals(count,w.calls.size);assertEquals(position,vm.positionOf(book));assertTrue(runtime.cache(book.sourceId).status(book.id,true).complete)
   compose.onNodeWithText("关闭").performClick();compose.waitUntil(10000){compose.onAllNodesWithTag("shelf-book-actions").fetchSemanticsNodes().isEmpty()};assertNull(vm.ui.value.book)
  }
@@ -110,9 +111,9 @@ class Patch106UiTest {
   assertEquals(request.nonce,runtime.request(request.key)!!.nonce);open()
   compose.onNodeWithTag("remove-book-${book.id}").performScrollTo().assertIsDisplayed();capture("03-small-actions-scrolled-robolectric")
   compose.onNodeWithTag("clear-download-${book.id}").performScrollTo().performClick();compose.onNodeWithText("取消").performClick();assertTrue(runtime.cache(book.sourceId).status(book.id).saved>0)
-  compose.onNodeWithTag("clear-download-${book.id}").performScrollTo().performClick();compose.onNodeWithText("清除副本").performClick()
-  compose.waitUntil(10000){runtime.cache(book.sourceId).status(book.id).saved==0};assertEquals(position,vm.positionOf(book));assertTrue(vm.isOnShelf(book));assertEquals(0,w.calls.size)
-  compose.onNodeWithTag("remove-book-${book.id}").performScrollTo().performClick();compose.onNodeWithText("取消").performClick();assertTrue(vm.isOnShelf(book));assertEquals(position,vm.positionOf(book))
+  compose.onNodeWithTag("clear-download-${book.id}").performScrollTo().performClick();compose.onNodeWithText("清除缓存与进度").performClick()
+  compose.waitUntil(10000){runtime.cache(book.sourceId).status(book.id).saved==0};assertNull(vm.positionOf(book));assertTrue(vm.isOnShelf(book));assertEquals(0,w.calls.size)
+  compose.onNodeWithTag("remove-book-${book.id}").performScrollTo().performClick();compose.onNodeWithText("取消").performClick();assertTrue(vm.isOnShelf(book));assertNull(vm.positionOf(book))
  }
  @Test fun backOutsideTapAndDownwardGestureDismissWithoutOpeningOrChangingTheBook() {
   setup();val position=vm.positionOf(book);open()

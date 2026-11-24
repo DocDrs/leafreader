@@ -16,6 +16,4 @@
 运行时字体由 Android 系统提供，不另打包字体。构建工具、SDK、JDK 与缓存不包含在源码 ZIP 中。
 
 Apache-2.0 全文随本项目放在 `licenses/Apache-2.0.txt`，并在 APK assets 中提供。
-jsoup 的原始 MIT 声明随 JAR 提取至 `licenses/Jsoup-MIT.txt`，同时在 APK assets 中提供。
-
-本文件只描述第三方组件的许可，不为本项目代码添加许可证。服务接入与书籍内容使用需要使用者自己的授权；公开版本不提供默认服务器或任何预置账户。
+jsoup 的原始 MIT 声明随 JAR 提取至 `licenses/Jsoup-MIT.txt`，同时在 APK assets 中提供。上游 BookHub 附件未提供项目级许可，未将其代码、原始附件、资源或凭据打包。0.4 仅依据用户授权将原客户端生产默认 HTTPS origin 作为独立配置预填，可由用户覆盖。

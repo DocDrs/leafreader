@@ -232,7 +232,12 @@ class OfflineStore(private val root:File,val owner:String,private val freeSpace:
     fun clear(id:String)=synchronized(lock) {
         owner(true)
         val epoch=generation(id)+1;book(id).mkdirs();atomic(File(book(id),"epoch"),epoch.toString().toByteArray())
-        book(id).listFiles().orEmpty().filter{it.name!="epoch"}.forEach { it.deleteRecursively() }
+        book(id).listFiles().orEmpty().filter{it.name!="epoch"}.forEach { entry ->
+            // Never follow a link out of this exact book directory; deletion errors remain actionable.
+            Files.walk(entry.toPath()).use { stream ->
+                stream.sorted(java.util.Comparator.reverseOrder()).forEach { path -> Files.deleteIfExists(path) }
+            }
+        }
     }
     fun cancelWrites(id:String)=synchronized(lock) {
         owner(true);book(id).mkdirs();val from=generation(id)

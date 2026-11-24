@@ -57,7 +57,7 @@ class Patch101UiTest {
             val c=BookHubClient(ServiceOrigin("https://release.fixture.invalid"),wire).also{it.restore(SavedSession(it.origin.value,"release-account","fixture-device","fixture-access","fixture-refresh"))}
             vault=MemorySessionVault().apply{value=c.snapshot()};runtime=OfflineDownloads(app,fixture.network,vault,false);runtime.setAutomaticWifi(false)
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory{
-                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime) as T
+                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent {
                 val density=LocalDensity.current
@@ -99,19 +99,19 @@ class Patch101UiTest {
         compose.onNodeWithTag("shelf-manage").performClick();compose.onNodeWithTag("shelf-book-public:1").performClick();compose.onNodeWithTag("shelf-book-public:2").performClick();await{(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}};snapshot("02-management")
         compose.onNodeWithTag("shelf-batch-remove").performClick();compose.onNodeWithText("取消").performClick();compose.runOnIdle{assertEquals(3,vm.ui.value.shelfBooks.size)}
         compose.onNodeWithTag("shelf-batch-remove").performClick();compose.onNodeWithTag("confirm-remove-shelf").performClick()
-        await{vm.ui.value.shelfBooks.size==1};compose.onNodeWithTag("shelf-selected-count").assertTextEquals("已选 0 本")
+        await{vm.ui.value.shelfBooks.size==1 && vm.ui.value.clearingBooks.isEmpty()};compose.onNodeWithTag("shelf-selected-count").assertTextEquals("已选 0 本")
         compose.runOnIdle{vm.refreshShelf()};await{!vm.ui.value.shelfLoading};compose.runOnIdle{
-            assertEquals(saved,vm.store.position(book.id));assertEquals(session,vault.value);assertTrue(runtime.cache(book.sourceId).status(book.id,true).complete)
+            assertNull(vm.store.position(book.id));assertEquals(session,vault.value);assertFalse(runtime.cache(book.sourceId).status(book.id,true).complete)
             assertEquals(listOf("public:3"),ReadingStore(compose.activity,book.sourceId).orderedShelf().map{it.id})
         }
         compose.onNodeWithTag("shelf-manage-exit").performClick();compose.runOnIdle{fixture.network.online=true;vm.selectTab("find");vm.search("行")}
         await{!vm.ui.value.findLoading && vm.ui.value.books.any{it.id==book.id}}
         compose.onNodeWithTag("add-shelf-${book.id}").performClick();compose.onNodeWithTag("find-book-${book.id}").assertDoesNotExist();compose.onNodeWithTag("tab-shelf").performClick()
-        compose.runOnIdle{fixture.network.online=false};compose.onNodeWithTag("shelf-book-${book.id}").performClick();await{!vm.ui.value.loading && vm.ui.value.chapter!=null}
-        compose.runOnIdle{assertEquals(37,vm.ui.value.offset);assertNull(vm.ui.value.error)}
+        compose.runOnIdle{fixture.network.online=false};compose.onNodeWithTag("shelf-book-${book.id}").performClick();await{!vm.ui.value.loading && vm.ui.value.error!=null}
+        compose.runOnIdle{assertNull(vm.store.position(book.id))}
         // A cold ViewModel with the same persisted account sees explicit re-add and keeps the other hidden ID.
         compose.runOnIdle{
-            val cold=ReaderViewModel(compose.activity.application,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,WireTransport{_,_,_,_,_->error("unexpected offline HTTP")})}),sessionVault=vault,offlineRuntime=runtime)
+            val cold=ReaderViewModel(compose.activity.application,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,WireTransport{_,_,_,_,_->error("unexpected offline HTTP")})}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false)
             assertEquals(setOf("public:2"),cold.store.hiddenShelfIds())
         }
         assertFalse(requests.any{it.startsWith("DELETE") || it.contains("/reading-package")})
@@ -119,21 +119,21 @@ class Patch101UiTest {
     @Test fun verifiedMenuDetectsCorruptionAndClearUpdatesItWithoutLosingProgressOrSendingRequests() {
         setup();val book=seedComplete();compose.runOnIdle{fixture.network.online=false;vm.store.save(book.id,"saved",51)}
         val saved=vm.store.position(book.id);menu(book)
-        await{compose.onAllNodesWithText("已下载").fetchSemanticsNodes().isNotEmpty()}
+        await{compose.onAllNodesWithText("完整缓存").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("shelf-menu-directory-${book.id}").assertDoesNotExist();compose.onNodeWithText("目录").assertDoesNotExist()
-        compose.onNodeWithTag("download-copy-${book.id}").assertTextContains("5/5",substring=true)
+        compose.onNodeWithTag("download-copy-${book.id}").assertDoesNotExist()
         val before=requests.size
         compose.runOnIdle {
             val root=File(compose.activity.noBackupFilesDir,"offline-v1/${sha(book.sourceId.toByteArray())}/${sha(book.id.toByteArray())}/${sha(fixture.version.toByteArray())}")
             val file=File(root,sha("a".toByteArray())+".bin");val raw=file.readBytes();file.writeBytes(raw.apply{this[0]=(this[0].toInt() xor 1).toByte()})
         }
-        compose.onNodeWithTag("verify-download-${book.id}").performClick()
-        await{compose.onAllNodesWithText("部分离线").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithTag("verify-download-${book.id}").assertDoesNotExist();compose.onNodeWithText("关闭").performClick();menu(book)
+        await{compose.onAllNodesWithText("部分缓存").fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("download-book-${book.id}").assertIsDisplayed();assertEquals(before,requests.size)
-        compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除副本").performClick()
-        await{compose.onAllNodesWithText("已取消").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("未下载").fetchSemanticsNodes().isNotEmpty()}
-        await{compose.onAllNodesWithTag("download-copy-${book.id}").fetchSemanticsNodes().any{it.config.toString().contains("本机暂无完整副本")}}
-        compose.runOnIdle{assertEquals(saved,vm.store.position(book.id));assertEquals(3,vm.ui.value.shelfBooks.size);assertFalse(runtime.cache(book.sourceId).status(book.id,true).complete)}
+        compose.onNodeWithTag("clear-download-${book.id}").performClick();compose.onNodeWithText("清除缓存与进度").performClick()
+        await{compose.onAllNodesWithText("已取消").fetchSemanticsNodes().isNotEmpty() || compose.onAllNodesWithText("未缓存").fetchSemanticsNodes().isNotEmpty()}
+        await{compose.onAllNodesWithTag("download-book-${book.id}").fetchSemanticsNodes().isNotEmpty()}
+        compose.runOnIdle{assertNull(vm.store.position(book.id));assertEquals(3,vm.ui.value.shelfBooks.size);assertFalse(runtime.cache(book.sourceId).status(book.id,true).complete)}
     }
     @Test fun queueRunningFailureCancelAndCompletionAreLiveAndCompletionNeedsActualResources() {
         setup();val book=vm.ui.value.shelfBooks.first();menu(book)
@@ -143,11 +143,11 @@ class Patch101UiTest {
         val r=runtime.request(runtime.key(book.sourceId,book.id))!!
         compose.runOnIdle{runtime.update(r,"RUNNING","测试处理中")};await{compose.onAllNodesWithText("下载中").fetchSemanticsNodes().isNotEmpty()}
         compose.runOnIdle{runtime.update(r,"FAILED","测试网络中断")};await{compose.onAllNodesWithText("下载失败").fetchSemanticsNodes().isNotEmpty()}
-        compose.runOnIdle{runtime.update(r,"COMPLETE","整本已下载")};await{compose.onAllNodesWithText("未下载").fetchSemanticsNodes().isNotEmpty()}
-        seedComplete();await{compose.onAllNodesWithText("已下载").fetchSemanticsNodes().isNotEmpty()}
+        compose.runOnIdle{runtime.update(r,"COMPLETE","整本已下载")};await{compose.onAllNodesWithText("未缓存").fetchSemanticsNodes().isNotEmpty()}
+        seedComplete();await{compose.onAllNodesWithText("完整缓存").fetchSemanticsNodes().isNotEmpty()}
         compose.runOnIdle{
             val dialog=org.robolectric.shadows.ShadowDialog.getLatestDialog();val view=dialog.window!!.decorView
-            val bitmap=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888);view.draw(Canvas(bitmap));File("build/patch101-previews/03-download-menu.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
+            val bitmap=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888);view.draw(Canvas(bitmap));File("build/patch101-previews").apply{mkdirs()}.resolve("03-download-menu.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
         }
     }
     @Test fun singleRemoveRequiresConfirmationAndAccountSwitchInvalidatesOldConfirmation() {

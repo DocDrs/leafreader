@@ -33,7 +33,7 @@ class DirectReadingStateTest {
     @Test fun firstReadResumeExplicitDirectoryAndOrderingCommitOnlyAfterBodySuccess() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            var now = 100L; val source = Source(); val vm = ReaderViewModel(app, source) { now }
+            var now = 100L; val source = Source(); val vm = ReaderViewModel(app, source,linkBookHubShelf=false) { now }
             advanceUntilIdle()
             assertEquals("shelf", vm.ui.value.topTab)
             assertEquals(listOf("a", "b"), vm.ui.value.shelfBooks.map { it.id })
@@ -47,7 +47,7 @@ class DirectReadingStateTest {
             vm.open(a, "two"); advanceUntilIdle(); assertEquals("two", vm.ui.value.chapter!!.id); assertEquals(0, vm.ui.value.offset)
             vm.backToShelf()
             assertEquals(listOf("a", "b"), vm.ui.value.shelfBooks.map { it.id })
-            val cold = ReaderViewModel(app, source) { 300 }; advanceUntilIdle()
+            val cold = ReaderViewModel(app, source,linkBookHubShelf=false) { 300 }; advanceUntilIdle()
             assertEquals(listOf("a", "b"), cold.ui.value.shelfBooks.map { it.id })
             cold.open(b); advanceUntilIdle(); assertEquals("one", cold.ui.value.chapter!!.id); assertEquals(80, cold.ui.value.offset)
         } finally { Dispatchers.resetMain() }
@@ -55,7 +55,7 @@ class DirectReadingStateTest {
     @Test fun invalidHistoryEmptyDirectoryAndBodyFailureNeverResetOrCountAsRead() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
-            val source = Source(); val vm = ReaderViewModel(app, source) { 100 }; advanceUntilIdle()
+            val source = Source(); val vm = ReaderViewModel(app, source,linkBookHubShelf=false) { 100 }; advanceUntilIdle()
             vm.store.save(a.id, "lost", 17)
             val old = vm.store.position(a.id)!!
             vm.open(a); advanceUntilIdle()
@@ -88,7 +88,7 @@ class DirectReadingStateTest {
                 val client = BookHubClient(ServiceOrigin("https://direct.fixture.invalid"), transport); client.login("fixture", "fixture-password")
                 return BookHubSource(client)
             }
-            val vm = ReaderViewModel(app, source()) { 100 }; advanceUntilIdle(); val book = vm.ui.value.shelfBooks.single()
+            val vm = ReaderViewModel(app, source(),linkBookHubShelf=false) { 100 }; advanceUntilIdle(); val book = vm.ui.value.shelfBooks.single()
             vm.chapterList(book.id); assertNull(vm.store.position(book.id))
             val refs = vm.chapterList(book.id)
             denyBody = true; vm.open(book); advanceUntilIdle()
@@ -96,7 +96,7 @@ class DirectReadingStateTest {
             denyBody = false; vm.retry(); advanceUntilIdle()
             assertEquals(refs[0].id, vm.ui.value.chapter!!.id)
             vm.position(50); vm.backToShelf()
-            val cold = ReaderViewModel(app, source()) { 200 }; advanceUntilIdle(); cold.open(book); advanceUntilIdle()
+            val cold = ReaderViewModel(app, source(),linkBookHubShelf=false) { 200 }; advanceUntilIdle(); cold.open(book); advanceUntilIdle()
             assertEquals(50, cold.ui.value.offset)
             cold.open(book, refs[1].id); advanceUntilIdle(); assertEquals(refs[1].id, cold.ui.value.chapter!!.id); assertEquals(0, cold.ui.value.offset)
         } finally { Dispatchers.resetMain() }
@@ -117,11 +117,11 @@ class DirectReadingStateTest {
                 override suspend fun chapters(bookId: String) = listOf(ChapterRef("one", "正文"))
                 override suspend fun chapter(bookId: String, chapterId: String) = Chapter("one", "正文", listOf("自写中文。".repeat(40)))
             }
-            val first = ReaderViewModel(app, source) { 100 }; advanceUntilIdle()
+            val first = ReaderViewModel(app, source,linkBookHubShelf=false) { 100 }; advanceUntilIdle()
             first.loadMoreShelf(); advanceUntilIdle(); first.open(b); advanceUntilIdle(); first.backToShelf()
             first.store.addToShelf(removed)
             assertEquals(listOf("b", "a", "removed"), first.store.orderedShelf().map { it.id })
-            val cold = ReaderViewModel(app, source) { 200 }; advanceUntilIdle()
+            val cold = ReaderViewModel(app, source,linkBookHubShelf=false) { 200 }; advanceUntilIdle()
             assertEquals(listOf("b", "a", "removed"), cold.ui.value.shelfBooks.map { it.id })
             val beforeMore = calls
             advanceUntilIdle(); assertEquals(beforeMore, calls) // no automatic pagination/prefetch
@@ -141,7 +141,7 @@ class DirectReadingStateTest {
                 override suspend fun chapters(bookId: String) = listOf(ChapterRef("one", "一"), ChapterRef("two", "二"))
                 override suspend fun chapter(bookId: String, chapterId: String) = Chapter(chapterId, chapterId, listOf("中文正文。".repeat(50) + "🌙"))
             }
-            val vm = ReaderViewModel(app, source) { 100 }; advanceUntilIdle()
+            val vm = ReaderViewModel(app, source,linkBookHubShelf=false) { 100 }; advanceUntilIdle()
             vm.open(a, "two"); advanceUntilIdle(); vm.boundary(-1); advanceUntilIdle()
             val saved = vm.store.position(a.id)!!
             assertEquals("one", saved.chapterId)

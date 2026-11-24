@@ -50,6 +50,27 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
     private suspend fun <T> disk(action:()->T):T=withContext(Dispatchers.IO){action()}
     private suspend fun cacheWrite(action:()->Unit) { try{disk(action);OfflineEvents.changed()}catch(e:IOException){if(e is SourceProblem)throw e;cacheWarning="本机空间或存储不可用，本次内容未能离线保存。"} }
     fun forgetDownloaded(bookId:String) {offline?.clear(bookId);manifests.remove(bookId);texts.keys.filter{it.startsWith("$bookId|")}.toList().forEach{texts.remove(it)};OfflineEvents.changed()}
+    fun invalidateDownloadedMemory(bookId:String) {
+        manifests.remove(bookId);texts.keys.filter{it.startsWith("$bookId|")}.toList().forEach{texts.remove(it)}
+    }
+    /** Disk-only parser: no progress writes, prefetch, renewal or HTTP fallback. */
+    suspend fun localChapterStatus(bookId:String,chapterId:String):String = withContext(Dispatchers.IO) {
+        if(!coverSessionValid() || client.observedReadPermission(bookId)==false)return@withContext "需原账号授权"
+        val cache=offline?:return@withContext "未缓存"
+        val data=cache.manifest(bookId,chapterId)?:return@withContext "未缓存"
+        val local=BookHubSource(client,cache,object:ConnectionState{override val online=false;override val wifi=false})
+        val decoded=mutableListOf<android.graphics.Bitmap>()
+        try {
+            val m=local.parseManifest(data).copy(cacheEpoch=cache.generation(bookId),offlineOnly=true)
+            if(m.chapters.none{it.id==chapterId})return@withContext "版本未缓存"
+            local.manifests[bookId]=m
+            local.readChapter(bookId,chapterId,m){decoded+=it}
+            "可离线读"
+        }catch(e:kotlinx.coroutines.CancellationException){throw e}
+        catch(e:SourceProblem){if(e.kind==FailureKind.NETWORK)"未缓存完整" else "缓存不可读"}
+        catch(_:Exception){"缓存不可读"}
+        finally{decoded.filterNot{it.isRecycled}.forEach{it.recycle()}}
+    }
     private val texts = object : LinkedHashMap<String, String>(24, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 16
     }
@@ -92,7 +113,7 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
                 b.optString("description").takeUnless { it == "null" } ?: "", "我的服务", 0, 0xFF516D66,
                 b.required("format"),readAllowed=permission)
         }.distinctBy { it.id }
-        return BookPage(books, if (more) next else null, more)
+        return BookPage(books, if (more) next else null, more,query.isNotBlank() || array.length()==books.size)
     }
     override suspend fun chapters(bookId: String): List<ChapterRef> {
         checkOfflineIdentity()
@@ -411,7 +432,7 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
         throw SourceProblem(FailureKind.UNSUPPORTED,"已检查全部目录项，未提取到可读文字；尚未保存阅读进度",diagnostic="BH_EPUB_NO_READABLE_START")
     }
 
-    private suspend fun readChapter(bookId: String, chapterId: String, manifest: Manifest): Chapter {
+    private suspend fun readChapter(bookId: String, chapterId: String, manifest: Manifest,decoded:((android.graphics.Bitmap)->Unit)?=null): Chapter {
         val spec = manifest.chapters.firstOrNull { it.id == chapterId } ?: throw SourceProblem(FailureKind.VERSION, "目录版本已变化，请返回目录重新打开")
         val parts = mutableListOf<String>(); var hasImages = false
         data class PendingGraphic(val target: EpubGraphicTarget, val paragraph: Int, val within: Int)
@@ -487,7 +508,7 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
             if(saved==null && cache!=null && (!connection.online || manifest.offlineOnly))offlineMissing()
             val epoch=manifest.cacheEpoch
             val bytes=saved?:client.raster(image.url)
-            val bitmap=SafeRaster.decode(bytes)
+            val bitmap=SafeRaster.decode(bytes);decoded?.invoke(bitmap)
             if(saved==null && cache!=null)cacheWrite{cache.put(bookId,manifest.version,image.id,bytes,epoch!!)}
             pixels+=bitmap.width.toLong()*bitmap.height
             if(pixels>8_000_000) throw SourceProblem(FailureKind.UNSUPPORTED,"本章图片尺寸超过限制，原进度已保留",diagnostic="BH_IMAGE_LIMIT")
@@ -506,3 +527,4 @@ class BookHubSource(private val client: BookHubClient, val offline:OfflineStore?
         return Chapter(spec.id, spec.label, parts, headingOnly = headingOnly,graphics=graphics,navigationNotice=notice)
     }
 }
+

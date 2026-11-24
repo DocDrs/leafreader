@@ -56,7 +56,7 @@ class ReleaseHomeUiTest {
             val c=BookHubClient(ServiceOrigin("https://release.fixture.invalid"),wire).also{it.restore(SavedSession(it.origin.value,"release-account","fixture-device","fixture-access","fixture-refresh"))}
             vault=MemorySessionVault().apply{value=c.snapshot()};runtime=OfflineDownloads(app,fixture.network,vault,false);runtime.setAutomaticWifi(false)
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory{
-                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime) as T
+                @Suppress("UNCHECKED_CAST")override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,wire)}),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent {
                 val density=LocalDensity.current

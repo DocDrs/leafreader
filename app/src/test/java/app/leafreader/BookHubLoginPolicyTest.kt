@@ -119,7 +119,7 @@ class BookHubLoginPolicyTest {
             old.saveSettings(ReaderSettings(fontSp = 25f, lineSpacing = 1.75f, palette = 4))
             old.save("demo-1", "chapter-2", 123)
             var probes = 0
-            val vm = ReaderViewModel(app, connectionGate = BookHubConnectionGate(LoginOriginVerifier { probes++ }))
+            val vm = ReaderViewModel(app, connectionGate = BookHubConnectionGate(LoginOriginVerifier { probes++ }),linkBookHubShelf=false)
             advanceUntilIdle()
             assertEquals(0, probes)
             assertEquals("https://legacy.fixture.invalid", vm.ownOrigin())
@@ -152,7 +152,7 @@ class BookHubLoginPolicyTest {
                 override suspend fun chapters(bookId: String) = emptyList<ChapterRef>()
                 override suspend fun chapter(bookId: String, chapterId: String) = Chapter(chapterId, "", emptyList())
             }
-            val vm = ReaderViewModel(app, local, gate, MemorySessionVault())
+            val vm = ReaderViewModel(app, local, gate, MemorySessionVault(),linkBookHubShelf=false)
             vm.connect("https://first.fixture.invalid", "fixture-user", "fixture-password")
             advanceUntilIdle()
             assertTrue(vm.ui.value.remote)

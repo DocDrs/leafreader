@@ -2,6 +2,10 @@ package app.leafreader.data
 
 import android.content.Context
 
+data class ShelfUpdateRecord(val state:String="NONE",val attemptAt:Long=0,val successAt:Long=0,val count:Int=0,val failure:String="")
+
+data class ShelfOperationRecord(val present:Boolean=true,val state:String="NONE",val at:Long=0,val reason:String="")
+
 data class ReadingPosition(val chapterId: String, val offset: Int, val updatedAt: Long = System.currentTimeMillis(), val graphicId: String? = null)
 data class ReaderSettings(val fontSp: Float = 21f, val lineSpacing: Float = 1.55f, val palette: Int = 0,
     val paragraphSpacingDp: Float = 18f, val horizontalMarginDp: Float = 26f, val verticalMarginDp: Float = 25f) {
@@ -29,6 +33,35 @@ class ReadingStore(context: Context, val sourceId: String) {
             .putInt("$bookId.history.$chapterId", offset.coerceAtLeast(0))
             .putLong("$bookId.time", System.currentTimeMillis()).putString("lastBook", bookId).commit()
     }
+    /** Progress removal and optional hiding commit atomically before any file cleanup. */
+    fun requestCleanup(bookId:String,hide:Boolean=false,remoteHide:Boolean=false,cleanupId:String?=null):Boolean = synchronized(prefs) {
+        val edit=prefs.edit().putString("cleanup-pending-v1:$bookId",cleanupId?:java.util.UUID.randomUUID().toString())
+            .putLong("$bookId.progress-cleared-v1",System.currentTimeMillis())
+        for(key in listOf("chapter","offset","time","graphic","entered"))edit.remove("$bookId.$key")
+        for(key in prefs.all.keys)if(key.startsWith("$bookId.history.") || key.startsWith("recovery-$bookId-"))edit.remove(key)
+        if(lastBook()==bookId)edit.remove("lastBook")
+        if(recentBook()?.id==bookId)edit.remove("recentBook")
+        if(cleanupId!=null)edit.putString("$bookId.membership-cleanup-nonce-v3",cleanupId)
+        if(hide)edit.putStringSet("shelfHidden-v1",hiddenShelfIds()+bookId)
+        if(remoteHide)edit.putStringSet("shelfHidden-v1",hiddenShelfIds()-bookId)
+            .putStringSet("shelfRemoteRemoved-v2",remoteRemovedIds()+bookId)
+            .putStringSet("shelfRemoteKnown-v2",remoteKnownIds()+bookId)
+            .putStringSet("shelfLocalOnly-v2",localOnlyIds()-bookId)
+        edit.commit()
+    }
+    fun membershipCleanupNonce(bookId:String)=prefs.getString("$bookId.membership-cleanup-nonce-v3",null)
+    fun cleanupToken(bookId:String):String? = when(val raw=prefs.all["cleanup-pending-v1:$bookId"]){is String->raw;true->"legacy";else->null}
+    fun cleanupPending(bookId:String)=cleanupToken(bookId)!=null
+    fun pendingCleanups():List<String> = prefs.all.filter{it.key.startsWith("cleanup-pending-v1:") && (it.value is String || it.value==true)}.keys.map{it.removePrefix("cleanup-pending-v1:")}
+    fun finishCleanup(bookId:String,expected:String?=cleanupToken(bookId)):Boolean = synchronized(prefs) {
+        if(cleanupToken(bookId)==null)true else if(cleanupToken(bookId)!=expected)false else prefs.edit().remove("cleanup-pending-v1:$bookId").commit()
+    }
+    fun shelfUpdateRecord():ShelfUpdateRecord = runCatching {
+        val j=org.json.JSONObject(prefs.getString("shelf-update-v1",null)?:"{}")
+        ShelfUpdateRecord(j.optString("state","NONE"),j.optLong("attempt"),j.optLong("success"),j.optInt("count"),j.optString("failure"))
+    }.getOrDefault(ShelfUpdateRecord())
+    fun saveShelfUpdate(value:ShelfUpdateRecord):Boolean=prefs.edit().putString("shelf-update-v1",org.json.JSONObject()
+        .put("state",value.state).put("attempt",value.attemptAt).put("success",value.successAt).put("count",value.count).put("failure",value.failure).toString()).commit()
     fun rememberBook(book: Book) {
         val b = org.json.JSONObject().put("id", book.id).put("title", book.title).put("author", book.author)
             .put("description", book.description).put("category", book.category).put("count", book.chapterCount).put("color", book.color).put("format", book.format).put("sourceId", sourceId).put("readAllowed",book.readAllowed?:org.json.JSONObject.NULL)
@@ -92,12 +125,51 @@ class ReadingStore(context: Context, val sourceId: String) {
             val old=decodeBooks(prefs.getString(key,null));if(old.any{it.id==bookId})writeBooks(key,old.map{if(it.id==bookId)it.copy(readAllowed=allowed)else it})
         }
     }
+    fun remoteRemovedIds():Set<String> = prefs.getStringSet("shelfRemoteRemoved-v2",emptySet())!!.toSet()
+    fun localOnlyIds():Set<String> = prefs.getStringSet("shelfLocalOnly-v2",emptySet())!!.toSet()
+    fun remoteKnownIds():Set<String> = prefs.getStringSet("shelfRemoteKnown-v2",emptySet())!!.toSet()+savedServiceShelf().map{it.id}
+    fun allHiddenShelfIds():Set<String> = hiddenShelfIds()+remoteRemovedIds()
+    /** Full read reconciliation changes membership metadata only; no progress/content writes. */
+    fun acceptRemoteSnapshot(fresh:List<Book>,removed:Set<String>):Boolean = synchronized(prefs) {
+        ensureOrder(fresh)
+        val present=fresh.map{it.id}.toSet();val merged=(fresh+savedServiceShelf()).distinctBy{it.id}
+        val data=org.json.JSONArray();merged.forEach{data.put(encodeBook(it))}
+        prefs.edit().putString("serviceShelf",data.toString())
+            .putStringSet("shelfRemoteKnown-v2",remoteKnownIds()+present)
+            .putStringSet("shelfRemoteRemoved-v2",(remoteRemovedIds()+removed)-present)
+            .putStringSet("shelfLocalOnly-v2",localOnlyIds()-present).commit()
+    }
+    fun shelfChoicePending()=prefs.getBoolean("shelf-choice-pending-v2",false)
+    fun requireShelfChoice()=prefs.edit().putBoolean("shelf-choice-pending-v2",true).commit()
+    /** Explicit login choice: merge only; preserved local-only IDs are exempt from remote absence. */
+    fun acceptShelfChoice(fresh:List<Book>,retained:Set<String>):Boolean = synchronized(prefs) {
+        ensureOrder(fresh)
+        val present=fresh.map{it.id}.toSet();val array=org.json.JSONArray();(fresh+savedServiceShelf()).distinctBy{it.id}.forEach{array.put(encodeBook(it))}
+        prefs.edit().putString("serviceShelf",array.toString())
+            .putStringSet("shelfRemoteKnown-v2",remoteKnownIds()+present)
+            .putStringSet("shelfRemoteRemoved-v2",remoteRemovedIds()-present)
+            .putStringSet("shelfHidden-v1",hiddenShelfIds()-present)
+            .putStringSet("shelfLocalOnly-v2",(localOnlyIds()+retained)-present)
+            .putBoolean("shelf-choice-pending-v2",false).commit()
+    }
+    fun recordRemoteAbsent(id:String):Boolean=prefs.edit().putStringSet("shelfRemoteRemoved-v2",remoteRemovedIds()+id)
+        .putStringSet("shelfRemoteKnown-v2",remoteKnownIds()+id).commit()
+    fun shelfOperation(bookId:String):ShelfOperationRecord = runCatching {
+        val j=org.json.JSONObject(prefs.getString("shelf-operation-v2:$bookId",null)?:"{}")
+        ShelfOperationRecord(j.optBoolean("present",true),j.optString("state","NONE"),j.optLong("at"),j.optString("reason"))
+    }.getOrDefault(ShelfOperationRecord())
+    fun saveShelfOperation(bookId:String,value:ShelfOperationRecord):Boolean = prefs.edit().putString("shelf-operation-v2:$bookId",org.json.JSONObject()
+        .put("present",value.present).put("state",value.state).put("at",value.at).put("reason",value.reason).toString()).commit()
     fun hiddenShelfIds():Set<String> = prefs.getStringSet("shelfHidden-v1",emptySet())!!.toSet()
     fun hideFromShelf(ids:Set<String>):Boolean = prefs.edit().putStringSet("shelfHidden-v1",hiddenShelfIds()+ids).commit()
-    fun addToShelf(book: Book):Boolean {
+    fun addToShelf(book: Book,remoteConfirmed:Boolean=false,localOverride:Boolean=false):Boolean {
         ensureOrder(listOf(book))
         val array=org.json.JSONArray();(listOf(book)+localShelf()).distinctBy{it.id}.forEach{array.put(encodeBook(it))}
-        return prefs.edit().putString("localShelf",array.toString()).putStringSet("shelfHidden-v1",hiddenShelfIds()-book.id).commit()
+        val edit=prefs.edit().putString("localShelf",array.toString()).putStringSet("shelfHidden-v1",hiddenShelfIds()-book.id)
+            .putStringSet("shelfRemoteRemoved-v2",remoteRemovedIds()-book.id)
+        if(remoteConfirmed)edit.putStringSet("shelfRemoteKnown-v2",remoteKnownIds()+book.id).putStringSet("shelfLocalOnly-v2",localOnlyIds()-book.id)
+        else if(localOverride)edit.putStringSet("shelfLocalOnly-v2",localOnlyIds()+book.id)
+        return edit.commit()
     }
     private fun ensureOrder(books: List<Book>) {
         var next = prefs.getInt("nextShelfOrder", 0)
@@ -106,7 +178,7 @@ class ReadingStore(context: Context, val sourceId: String) {
         edit.putInt("nextShelfOrder", next).commit()
     }
     fun orderedShelf(serviceBooks: List<Book> = savedServiceShelf()): List<Book> {
-        val hidden=hiddenShelfIds()
+        val hidden=allHiddenShelfIds()
         val unique = (serviceBooks + localShelf()).distinctBy { it.id }.filterNot{it.id in hidden}
         ensureOrder(unique)
         return unique.sortedWith(compareByDescending<Book> { prefs.contains("${it.id}.chapter") || prefs.contains("${it.id}.entered") }
@@ -119,7 +191,7 @@ class ReadingStore(context: Context, val sourceId: String) {
             val array=org.json.JSONArray(raw)
             if(decodeBooks(raw).size!=array.length())throw java.io.IOException("本机书架元数据不完整")
         }
-        return (savedServiceShelf()+localShelf()).distinctBy{it.id}.filterNot{it.id in hiddenShelfIds()}
+        return (savedServiceShelf()+localShelf()).distinctBy{it.id}.filterNot{it.id in allHiddenShelfIds()}
     }
     fun enteredReadOnly(bookId:String):Long = if(prefs.contains("$bookId.entered"))prefs.getLong("$bookId.entered",0).coerceAtLeast(0)
         else if(prefs.contains("$bookId.chapter"))prefs.getLong("$bookId.time",0).coerceAtLeast(0) else 0L

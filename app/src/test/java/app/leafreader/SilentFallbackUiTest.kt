@@ -37,7 +37,7 @@ class SilentFallbackUiTest {
             compose.activity.viewModelStore.clear()
             vm=androidx.lifecycle.ViewModelProvider(compose.activity,object:androidx.lifecycle.ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST") override fun<T:androidx.lifecycle.ViewModel>create(modelClass:Class<T>):T =
-                    ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault()) as T
+                    ReaderViewModel(compose.activity.application,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false) as T
             })[ReaderViewModel::class.java]
             compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}
         }

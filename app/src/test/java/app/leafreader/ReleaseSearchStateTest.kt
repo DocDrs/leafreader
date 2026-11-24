@@ -31,7 +31,7 @@ class ReleaseSearchStateTest {
         try {
             val source=Source();val late=CompletableDeferred<Unit>()
             source.response={q,_->if(q.isBlank())BookPage(listOf(book("owned"))) else {withContext(NonCancellable){late.await()};BookPage(listOf(book("late")))}}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle()
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle()
             assertTrue(vm.ui.value.books.isEmpty());vm.search("  ");advanceUntilIdle();assertEquals(1,source.calls.size)
             vm.search("旧词");runCurrent();vm.clearSearch();late.complete(Unit);advanceUntilIdle()
             assertTrue(vm.ui.value.books.isEmpty());assertEquals("",vm.ui.value.query);assertFalse(vm.ui.value.hasMore);assertFalse(vm.ui.value.findLoading)
@@ -41,7 +41,7 @@ class ReleaseSearchStateTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val source=Source();source.response={q,_->BookPage(if(q.isBlank())listOf(book("synced")) else listOf(book("synced"),book("local"),book("other"),book("synced","other-account")))}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.addToShelf(book("local"))
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.addToShelf(book("local"))
             vm.search("相同");advanceUntilIdle()
             assertEquals(listOf("release-search|other","other-account|synced"),vm.ui.value.books.map{it.key})
             assertFalse(vm.isOnShelf(book("synced","other-account")));assertTrue(vm.addToShelf(book("other")))
@@ -54,7 +54,7 @@ class ReleaseSearchStateTest {
         try {
             var fail=false;val source=Source()
             source.response={q,c->when{q.isBlank()->BookPage(listOf(book("owned")));c==null->BookPage(listOf(book("owned")),"next",true);c=="next"->BookPage(listOf(book("new")),"last",true);fail->throw SourceProblem(FailureKind.NETWORK,"测试断网");else->BookPage(listOf(book("new2")))}}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.search("词");advanceUntilIdle()
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.search("词");advanceUntilIdle()
             assertTrue(vm.ui.value.books.isEmpty());assertTrue(vm.ui.value.hasMore)
             vm.loadMore();advanceUntilIdle();assertEquals(listOf("new"),vm.ui.value.books.map{it.id})
             fail=true;vm.loadMore();advanceUntilIdle();assertNotNull(vm.ui.value.error);assertEquals(listOf("new"),vm.ui.value.books.map{it.id})
@@ -67,7 +67,7 @@ class ReleaseSearchStateTest {
         try {
             val source=Source()
             source.response={q,c->when{q.isNotBlank()->BookPage(listOf(book("owned-on-page-two"),book("new")));c==null->BookPage(listOf(book("first")),"shelf-next",true);else->BookPage(listOf(book("owned-on-page-two")))}}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();assertEquals(1,vm.ui.value.shelfBooks.size)
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();assertEquals(1,vm.ui.value.shelfBooks.size)
             vm.search("词");advanceUntilIdle();assertEquals(listOf("new"),vm.ui.value.books.map{it.id});assertEquals(2,vm.ui.value.shelfBooks.size)
             assertEquals(listOf("" to null,"词" to null,"" to "shelf-next"),source.calls)
         }finally{Dispatchers.resetMain()}
@@ -77,7 +77,7 @@ class ReleaseSearchStateTest {
         try {
             var fail=true;val source=Source()
             source.response={q,_->if(q.isBlank() && fail)throw SourceProblem(FailureKind.AUTH,"测试会话失效") else BookPage(if(q.isBlank())listOf(book("owned")) else listOf(book("owned"),book("new")))}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.search("词");advanceUntilIdle()
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.search("词");advanceUntilIdle()
             assertTrue(vm.ui.value.error!!.contains("BH_AUTH"));assertTrue(vm.ui.value.books.isNotEmpty());assertFalse(vm.ui.value.shelfKnownComplete)
             fail=false;vm.retrySearch();advanceUntilIdle();assertNull(vm.ui.value.error);assertEquals(listOf("new"),vm.ui.value.books.map{it.id})
         }finally{Dispatchers.resetMain()}
@@ -87,7 +87,7 @@ class ReleaseSearchStateTest {
         try {
             val late=CompletableDeferred<Unit>();val source=Source()
             source.response={q,_->when(q){""->BookPage(emptyList());"old"->{withContext(NonCancellable){late.await()};throw SourceProblem(FailureKind.NETWORK,"旧请求失败")};else->BookPage(listOf(book("fresh")))}}
-            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault());advanceUntilIdle();vm.search("old");runCurrent();vm.search("new");runCurrent();late.complete(Unit);advanceUntilIdle()
+            val vm=ReaderViewModel(app,source,sessionVault=MemorySessionVault(),linkBookHubShelf=false);advanceUntilIdle();vm.search("old");runCurrent();vm.search("new");runCurrent();late.complete(Unit);advanceUntilIdle()
             assertEquals("new",vm.ui.value.query);assertEquals(listOf("fresh"),vm.ui.value.books.map{it.id});assertNull(vm.ui.value.error)
         }finally{Dispatchers.resetMain()}
     }
@@ -104,7 +104,7 @@ class ReleaseSearchStateTest {
                 WireResponse(200,BookHubFixtures.envelope(data).toByteArray())
             }
             val vault=MemorySessionVault().apply{value=SavedSession(origin,"first","fixture-device","fixture-access","fixture-refresh")}
-            val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,transport)}),sessionVault=vault)
+            val vm=ReaderViewModel(app,connectionGate=BookHubConnectionGate(LoginOriginVerifier{},{BookHubClient(it,transport)}),sessionVault=vault,linkBookHubShelf=false)
             advanceUntilIdle();val owner=vm.ui.value.shelfBooks.single().sourceId
             vm.search("old");runCurrent();vm.connect(origin,"second","synthetic-password");runCurrent();late.complete(Unit);advanceUntilIdle()
             assertEquals(2,vm.ui.value.shelfBooks.size);assertNotEquals(owner,vm.ui.value.shelfBooks.single{it.sourceId==vm.store.sourceId}.sourceId);assertTrue(vm.ui.value.books.isEmpty());assertTrue(vm.ui.value.query.isEmpty());assertNull(vm.ui.value.error)
