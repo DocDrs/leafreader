@@ -5,7 +5,12 @@ data class ReadingProgressSnapshot(
     val chapterPercent: Int?,
     val bookPercent: Int?,
     val bookApproximate: Boolean = false,
+    val bookPercentExact: Double? = bookPercent?.toDouble(),
 ) {
+    val compactBookLabel:String get()=bookPercentExact?.takeIf{it.isFinite()}?.let {
+        val safe=if(bookPercent==100)100.0 else it.coerceIn(0.0,99.99)
+        java.lang.String.format(java.util.Locale.ROOT,"%.2f%%",safe)
+    }?:"—"
     val chapterLabel: String get() = chapterPercent?.let { "本章 $it%" } ?: "本章 —"
     val bookLabel: String get() = bookPercent?.let { if (bookApproximate) "全书约 $it%" else "全书 $it%" } ?: "全书 —"
 }
@@ -38,9 +43,11 @@ object ReadingProgress {
         if (weights != null) {
             val before = weights.take(chapterIndex).sumOf { it.toLong() }
             val total = weights.sumOf { it.toLong() }
-            return ReadingProgressSnapshot(chapter, percent((before + end).toDouble() / total))
+            val ratio=(before+end).toDouble()/total
+            return ReadingProgressSnapshot(chapter,percent(ratio),bookPercentExact=ratio*100)
         }
-        return ReadingProgressSnapshot(chapter, percent((chapterIndex + within) / chapterCount), bookApproximate = true)
+        val ratio=(chapterIndex+within)/chapterCount
+        return ReadingProgressSnapshot(chapter,percent(ratio),bookApproximate=true,bookPercentExact=ratio*100)
     }
 
     // Do not round an unfinished page up to 100%. The true last-page end is exactly chapterLength.

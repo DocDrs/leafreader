@@ -11,11 +11,18 @@ import org.robolectric.util.ReflectionHelpers
 
 /** Host-only native AGSL oracle. This bypass is NEVER used by the APK or claimed as device GPU testing. */
 internal object NavNativeRaster {
- fun render(input:Bitmap,w:Int,h:Int,guard:Int,density:Float,dark:Boolean,strength:Float):Bitmap {
-  val shader=RuntimeShader(NavLensKernel.SOURCE)
+ fun render(input:Bitmap,w:Int,h:Int,guard:Int,density:Float,dark:Boolean,strength:Float,kernel:String=NavLensKernel.SOURCE,cornerDp:Float=30f,sampleMin:androidx.compose.ui.geometry.Offset=androidx.compose.ui.geometry.Offset.Zero,sampleMax:androidx.compose.ui.geometry.Offset=androidx.compose.ui.geometry.Offset(input.width.toFloat(),input.height.toFloat()),clear:Boolean=false,labels:List<androidx.compose.ui.geometry.Rect> = emptyList(),motion:Float=0f,phase:Float=0f):Bitmap {
+  val shader=RuntimeShader(kernel)
   shader.setFloatUniform("lensSize",w.toFloat(),h.toFloat());shader.setFloatUniform("guard",guard.toFloat())
-  shader.setFloatUniform("radius",minOf(30*density,w/2f,h/2f));shader.setFloatUniform("strength",strength)
+  shader.setFloatUniform("radius",minOf(cornerDp*density,w/2f,h/2f));shader.setFloatUniform("strength",strength)
   shader.setColorUniform("wash",if(dark)Color.rgb(40,55,48)else Color.rgb(247,249,243))
+  if(kernel.contains("uniform float edgeWidth;")) {shader.setFloatUniform("edgeWidth",minOf(22*density,w/2f,h/2f).coerceAtLeast(1f))
+  shader.setFloatUniform("sampleMin",sampleMin.x,sampleMin.y);shader.setFloatUniform("sampleMax",sampleMax.x,sampleMax.y)}
+  if(kernel==NavLensKernel.SOURCE) {
+   shader.setFloatUniform("clearMaterial",if(clear)1f else 0f);shader.setFloatUniform("darkMode",if(dark)1f else 0f);shader.setFloatUniform("feather",4*density)
+   shader.setFloatUniform("labelCount",labels.size.toFloat());shader.setFloatUniform("labelRects",glassLabelFloats(labels))
+   shader.setFloatUniform("flow",motion);shader.setFloatUniform("flowPhase",phase);shader.setFloatUniform("flowScale",5*density)
+  }
   shader.setInputShader("backdrop",BitmapShader(input,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP))
   val out=Bitmap.createBitmap(input.width,input.height,Bitmap.Config.ARGB_8888)
   val canvas=Canvas(out)
@@ -47,6 +54,6 @@ class NavLensNativeTest {
   assertTrue(NavRefractionPolicy.enabled(33,true,false,false,true,true))
   for(v in listOf(listOf(26,true,false,false,true,true),listOf(32,true,false,false,true,true),listOf(35,false,false,false,true,true),listOf(35,true,true,false,true,true),listOf(35,true,false,true,true,true),listOf(35,true,false,false,false,true),listOf(35,true,false,false,true,false)))
    assertFalse(NavRefractionPolicy.enabled(v[0] as Int,v[1] as Boolean,v[2] as Boolean,v[3] as Boolean,v[4] as Boolean,v[5] as Boolean))
-  assertTrue(NavRefractionPolicy.bounded(1000,1200));assertFalse(NavRefractionPolicy.bounded(1001,1200));assertFalse(NavRefractionPolicy.bounded(0,100));assertFalse(NavRefractionPolicy.bounded(Int.MAX_VALUE,Int.MAX_VALUE))
+  assertTrue(NavRefractionPolicy.bounded(1500,2000));assertFalse(NavRefractionPolicy.bounded(1501,2000));assertFalse(NavRefractionPolicy.bounded(0,100));assertFalse(NavRefractionPolicy.bounded(Int.MAX_VALUE,Int.MAX_VALUE))
  }
 }

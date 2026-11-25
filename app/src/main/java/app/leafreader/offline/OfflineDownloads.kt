@@ -33,6 +33,11 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
     @Volatile private var activeClient:BookHubClient?=null
     private val guard=queueGuards.getOrPut(context.applicationInfo.dataDir){Any()}
     init {
+        GlobalDownloadPreferences(context)
+        if(prefs.getBoolean("global-policy-cancel-pending",false)) {
+            requests().filter{it.automatic&&it.state in listOf("QUEUED","WAITING","RUNNING","PAUSED")}.forEach{cancel(it.owner,it.bookId)}
+            check(prefs.edit().putBoolean("global-policy-cancel-pending",false).commit())
+        }
         if(scheduleJobs)try {
             context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object:ConnectivityManager.NetworkCallback(){
                 override fun onAvailable(network:Network){OfflineEvents.changed()}
@@ -43,11 +48,22 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
     }
     fun cache(owner:String)=OfflineStore(File(context.noBackupFilesDir,"offline-v1/"+sha(owner.toByteArray())),owner)
     fun source(client:BookHubClient)=BookHubSource(client,cache(BookHubSource.ownerId(client)),connection)
-    fun automaticWifi()=prefs.getBoolean("auto-wifi",true)
+    fun automaticWifi()=GlobalDownloadPreferences(context).enabled()
     fun setAutomaticWifi(value:Boolean) {
+        GlobalDownloadPreferences(context).set(value)
         prefs.edit().putBoolean("auto-wifi",value).commit()
-        if(!value)requests().filter{it.automatic && it.state in listOf("QUEUED","WAITING","RUNNING")}.forEach{cancel(it.owner,it.bookId)}
+        if(!value)requests().filter{it.automatic && it.state in listOf("QUEUED","WAITING","RUNNING","PAUSED")}.forEach{cancel(it.owner,it.bookId)}
         OfflineEvents.changed()
+    }
+    fun automaticWifiOnly()=GlobalDownloadPreferences(context).wifiOnly()
+    fun canTransfer(r:DownloadRequest,client:BookHubClient)=valid(r,client)&&(!r.automatic||GlobalDownloadPreferences(context).networkAllowed(connection))
+    /** Network preference changes never touch manual requests, content, or saved reading anchors. */
+    fun networkPolicyChanged() {
+        synchronized(guard){requests().filter{it.automatic&&it.state in listOf("QUEUED","WAITING","RUNNING")}.forEach{r->
+            save(r.copy(nonce=UUID.randomUUID().toString(),state="WAITING",message=GlobalDownloadPreferences(context).waitingLabel()))
+            scheduler?.cancel(r.jobId)
+        }}
+        activeOwner?.let{scheduleMore(it)};OfflineEvents.changed()
     }
     private fun encode(r:DownloadRequest)=JSONObject().put("key",r.key).put("owner",r.owner).put("book",r.bookId).put("title",r.title)
         .put("job",r.jobId).put("nonce",r.nonce).put("metered",r.allowMetered).put("auto",r.automatic).put("state",r.state).put("message",r.message).toString()
@@ -61,8 +77,8 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
         if(activeOwner!=null && activeOwner!=owner)deactivate()
         activeOwner=owner;activeClient=client
         requests().filter{it.owner==owner && !ReadingStore(context,owner).cleanupPending(it.bookId) && it.state in listOf("QUEUED","WAITING","RUNNING","PAUSED")}.forEach{
-            val queued=it.copy(state="QUEUED",message=if(!it.allowMetered && !connection.wifi) "等待 Wi-Fi" else "等待系统调度")
-            save(queued)
+            if(it.automatic&&!automaticWifi())cancel(it.owner,it.bookId)
+            else save(it.copy(state="QUEUED",message=if(it.automatic && !GlobalDownloadPreferences(context).networkAllowed(connection))GlobalDownloadPreferences(context).waitingLabel() else if(!it.automatic && !it.allowMetered && !connection.wifi) "等待 Wi-Fi" else "等待系统调度"))
         }
         scheduleMore(owner)
         OfflineEvents.changed()
@@ -73,26 +89,28 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
             scheduler?.cancel(it.jobId);save(it.copy(state="PAUSED",message="等待对应账号登录"))
         };OfflineEvents.changed()
     }
+    private fun permitted(owner:String,book:Book)=
+        (activeClient?.takeIf{activeOwner==owner}?.observedReadPermission(book.id)?:ReadingStore(context,owner).knownReadPermission(book.id)?:book.readAllowed)!=false
     /** Batch idempotence must be atomic with enqueue, including simultaneous confirmations / automatic jobs. */
     fun enqueueIfNeeded(owner:String,book:Book,allowMetered:Boolean=false,automatic:Boolean=false,stillWanted:()->Boolean={true}):BatchEnqueueResult=synchronized(guard) {
         if(!stillWanted())return@synchronized BatchEnqueueResult.REJECTED
-        if(owner!=activeOwner || activeClient?.snapshot()==null)return@synchronized BatchEnqueueResult.REJECTED
+        if(owner!=activeOwner || activeClient?.snapshot()==null || !permitted(owner,book))return@synchronized BatchEnqueueResult.REJECTED
         if(busy(owner,book.id) || cache(owner).status(book.id,verify=true).complete)return@synchronized BatchEnqueueResult.PRESENT
         if(enqueue(owner,book,allowMetered,automatic))BatchEnqueueResult.ADDED else BatchEnqueueResult.REJECTED
     }
     fun enqueue(owner:String,book:Book,allowMetered:Boolean=false,automatic:Boolean=false):Boolean=synchronized(guard) {
-        if(owner!=activeOwner || activeClient?.snapshot()==null || ReadingStore(context,owner).cleanupPending(book.id))return@synchronized false
+        if(owner!=activeOwner || activeClient?.snapshot()==null || !permitted(owner,book) || ReadingStore(context,owner).cleanupPending(book.id))return@synchronized false
         if(automatic && !automaticWifi())return@synchronized false
         val key=key(owner,book.id);val previous=request(key)
         val id=previous?.jobId?:prefs.getInt("next-job",7000).also{prefs.edit().putInt("next-job",it+1).commit()}
         scheduler?.cancel(id)
-        val r=DownloadRequest(key,owner,book.id,book.title,id,UUID.randomUUID().toString(),allowMetered,automatic,"QUEUED",if(!allowMetered && !connection.wifi)"等待 Wi-Fi" else "等待系统调度")
+        val r=DownloadRequest(key,owner,book.id,book.title,id,UUID.randomUUID().toString(),allowMetered,automatic,"QUEUED",if(automatic && !GlobalDownloadPreferences(context).networkAllowed(connection))GlobalDownloadPreferences(context).waitingLabel() else if(!automatic && !allowMetered && !connection.wifi)"等待 Wi-Fi" else "等待系统调度")
         save(r);scheduleMore(owner);OfflineEvents.changed();true
     }
     private fun save(r:DownloadRequest){prefs.edit().putString("request-${r.key}",encode(r)).commit()}
     fun jobInfo(r:DownloadRequest):JobInfo=JobInfo.Builder(r.jobId,ComponentName(context,OfflineDownloadService::class.java))
         .setExtras(PersistableBundle().apply{putString("request",r.key);putString("nonce",r.nonce)})
-        .setRequiredNetworkType(if(r.allowMetered)JobInfo.NETWORK_TYPE_ANY else JobInfo.NETWORK_TYPE_UNMETERED)
+        .setRequiredNetworkType(if(if(r.automatic)!automaticWifiOnly()else r.allowMetered)JobInfo.NETWORK_TYPE_ANY else JobInfo.NETWORK_TYPE_UNMETERED)
         .setRequiresStorageNotLow(true).setPersisted(true).setBackoffCriteria(30000,JobInfo.BACKOFF_POLICY_EXPONENTIAL).build()
     fun scheduleMore(owner:String,finishedJob:Int?=null) {
         if(!scheduleJobs || activeOwner!=owner)return
@@ -140,7 +158,7 @@ class OfflineDownloads(context:Context,val connection:ConnectionState=AndroidCon
     }
     fun valid(r:DownloadRequest,client:BookHubClient):Boolean {
         val current=request(r.key)
-        return !ReadingStore(context,r.owner).cleanupPending(r.bookId) && activeClient===client && activeOwner==r.owner && client.snapshot()!=null && (!r.automatic || automaticWifi()) && current?.nonce==r.nonce && current.state in listOf("QUEUED","WAITING","RUNNING")
+        return !ReadingStore(context,r.owner).cleanupPending(r.bookId) && activeClient===client && activeOwner==r.owner && client.snapshot()!=null && client.observedReadPermission(r.bookId)!=false && (!r.automatic || automaticWifi()) && current?.nonce==r.nonce && current.state in listOf("QUEUED","WAITING","RUNNING")
     }
     fun label(owner:String,bookId:String):String {
         val status=cache(owner).status(bookId);val r=request(key(owner,bookId))

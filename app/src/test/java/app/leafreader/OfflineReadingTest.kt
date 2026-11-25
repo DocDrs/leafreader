@@ -126,7 +126,7 @@ class OfflineReadingTest {
     }
     @Test fun queuePersistsWifiDefaultAndOnlyExplicitNewAddsAreEnqueued() {
         val w=OfflineFixtures();val c=w.client();val manager=OfflineDownloads(app,w.network,MemorySessionVault(),false);manager.activate(c)
-        val owner=BookHubSource.ownerId(c);assertTrue(manager.automaticWifi());assertNull(manager.request(manager.key(owner,"public:1")))
+        val owner=BookHubSource.ownerId(c);assertFalse(manager.automaticWifi());manager.setAutomaticWifi(true);assertTrue(manager.automaticWifi());assertNull(manager.request(manager.key(owner,"public:1")))
         val book=Book("public:1","自写","","","",1,0,sourceId=owner);assertTrue(manager.enqueue(owner,book,automatic=true))
         val request=manager.request(manager.key(owner,book.id))!!;val job=manager.jobInfo(request)
         assertEquals(JobInfo.NETWORK_TYPE_UNMETERED,job.networkType);assertTrue(job.isPersisted);assertTrue(job.isRequireStorageNotLow)

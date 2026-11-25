@@ -1,0 +1,30 @@
+
+ uniform shader backdrop;
+ uniform float2 lensSize;
+ uniform float guard;
+ uniform float radius;
+ uniform float strength;
+ uniform float edgeWidth;
+ uniform float2 sampleMin;
+ uniform float2 sampleMax;
+ layout(color) uniform half4 wash;
+ float sdf(float2 p) {
+   float2 q=abs(p-lensSize*0.5)-(lensSize*0.5-float2(radius));
+   return length(max(q,float2(0.0)))+min(max(q.x,q.y),0.0)-radius;
+ }
+ half4 main(float2 xy) {
+   float2 p=xy-float2(guard);
+   float d=sdf(p);
+   float2 normal=float2(sdf(p+float2(1.0,0.0))-sdf(p-float2(1.0,0.0)),
+                        sdf(p+float2(0.0,1.0))-sdf(p-float2(0.0,1.0)));
+   normal=normal/max(length(normal),0.001);
+   float rim=clamp(1.0+d/max(edgeWidth,1.0),0.0,1.0);
+   float2 lens=(p-lensSize*0.5)*0.022*(1.0-rim);
+   float2 displaced=xy+normal*strength*rim*rim-lens;
+   displaced=clamp(displaced,sampleMin+float2(0.5),sampleMax-float2(0.5));
+   half4 sampled=backdrop.eval(displaced);
+   // Strong center wash protects labels; the small rim exposes the geometric displacement.
+   float opacity=mix(0.74,0.12,rim*rim);
+   return mix(sampled,wash,opacity);
+ }
+ 

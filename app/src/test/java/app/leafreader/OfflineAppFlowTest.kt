@@ -50,7 +50,8 @@ class OfflineAppFlowTest {
             val w=OfflineFixtures();val c=w.client();val vault=MemorySessionVault().apply{value=c.snapshot()};val runtime=OfflineDownloads(app,w.network,vault,false)
             val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false)
             val existing=vm.ui.first{!it.shelfLoading}.shelfBooks.single();val owner=existing.sourceId
-            assertNull(runtime.request(runtime.key(owner,existing.id)))
+            assertNull(runtime.request(runtime.key(owner,existing.id)));assertFalse(vm.ui.value.automaticWifi)
+            vm.automaticWifi(true);assertNull(runtime.request(runtime.key(owner,existing.id)))
             val new=existing.copy(id="public:2",title="新加入自写样本");val calls=w.calls.size;vm.addToShelf(new)
             OfflineEvents.revision.first{runtime.request(runtime.key(owner,new.id))!=null}
             val request=runtime.request(runtime.key(owner,new.id))!!;assertTrue(request.automatic);assertFalse(request.allowMetered)

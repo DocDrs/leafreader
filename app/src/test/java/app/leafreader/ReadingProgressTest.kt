@@ -54,4 +54,13 @@ class ReadingProgressTest {
         assertEquals("全书 100%", ReadingProgress.calculate(Int.MAX_VALUE, Int.MAX_VALUE, 1, 2, true, weights).bookLabel)
     }
 
+    @Test fun compactPercentageUsesActualRatioAndNeverRoundsUnfinishedBookTo100() {
+        assertEquals("12.34%",ReadingProgress.calculate(2468,20000,0,1,true).compactBookLabel)
+        assertEquals("0.00%",ReadingProgress.calculate(0,20000,0,1,true).compactBookLabel)
+        assertEquals("99.99%",ReadingProgress.calculate(19999,20000,0,1,true).compactBookLabel)
+        assertEquals("100.00%",ReadingProgress.calculate(20000,20000,0,1,true).compactBookLabel)
+        assertEquals("—",ReadingProgress.calculate(10,20,0,1,false).compactBookLabel)
+        assertEquals("—",ReadingProgress.calculate(0,0,0,0,false).compactBookLabel)
+    }
+
 }

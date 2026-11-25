@@ -51,8 +51,8 @@ class OfflineControlsTest {
     }
     @Test fun automaticWifiCanBeDisabledAndSurvivesSettingsReopen() {
         setup();compose.onNodeWithTag("tab-settings").performClick()
-        compose.onNodeWithTag("automatic-wifi").performScrollTo().assertIsOn().performClick().assertIsOff()
+        compose.showHomeSetting("automatic-wifi").assertIsOff().performClick().assertIsOn().performClick().assertIsOff()
         compose.onNodeWithTag("tab-shelf").performClick();compose.onNodeWithTag("tab-settings").performClick()
-        compose.onNodeWithTag("automatic-wifi").assertIsOff();compose.runOnIdle{assertFalse(runtime.automaticWifi())}
+        compose.showHomeSetting("automatic-wifi").assertIsOff();compose.runOnIdle{assertFalse(runtime.automaticWifi())}
     }
 }

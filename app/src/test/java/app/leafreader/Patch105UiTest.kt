@@ -36,7 +36,7 @@ class Patch105UiTest {
   compose.runOnUiThread{vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);vm.selectTab("settings");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}}}
   compose.waitUntil(10000){compose.onAllNodesWithTag("offline-total-bytes").fetchSemanticsNodes().isNotEmpty()}
   compose.onNodeWithText("管理离线副本与失败任务").assertDoesNotExist();compose.onNodeWithText(books[120].title).assertDoesNotExist();compose.onNodeWithText(books[0].title).assertDoesNotExist()
-  compose.onNodeWithTag("offline-management").performScrollTo().performClick()
+  compose.showHomeSetting("offline-management").performClick()
   compose.waitUntil(15000){compose.onAllNodesWithTag("hidden-clear-public:1").fetchSemanticsNodes().isNotEmpty()}
   val matcher=SemanticsMatcher("hidden cleanup buttons"){it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("hidden-clear-")==true}
   assertTrue(compose.onAllNodes(matcher).fetchSemanticsNodes().size in 1..8)

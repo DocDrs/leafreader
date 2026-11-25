@@ -96,7 +96,12 @@ class Patch101UiTest {
         compose.runOnIdle{fixture.network.online=false;vm.open(book)};await{!vm.ui.value.loading && vm.ui.value.chapter!=null}
         compose.runOnIdle{vm.open(book,vm.ui.value.chapters[1].id)};await{!vm.ui.value.loading && vm.ui.value.graphicId==null}
         compose.runOnIdle{vm.position(37);vm.backToShelf()};val saved=vm.store.position(book.id);val session=vault.value
-        compose.onNodeWithTag("shelf-manage").performClick();compose.onNodeWithTag("shelf-book-public:1").performClick();compose.onNodeWithTag("shelf-book-public:2").performClick();await{(1..3).all{n->compose.onAllNodesWithTag("shelf-real-cover-public:$n",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}};snapshot("02-management")
+        compose.onNodeWithTag("shelf-manage").performClick()
+        for(id in listOf("public:1","public:2")) {
+            compose.onNodeWithTag("shelf-list").performScrollToNode(hasTestTag("shelf-book-$id"))
+            compose.onNodeWithTag("shelf-book-$id").assertIsDisplayed().performClick()
+        }
+        await{vm.ui.value.shelfSelection.size==2};compose.onNodeWithTag("shelf-selected-count").assertTextEquals("已选 2 本");snapshot("02-management")
         compose.onNodeWithTag("shelf-batch-remove").performClick();compose.onNodeWithText("取消").performClick();compose.runOnIdle{assertEquals(3,vm.ui.value.shelfBooks.size)}
         compose.onNodeWithTag("shelf-batch-remove").performClick();compose.onNodeWithTag("confirm-remove-shelf").performClick()
         await{vm.ui.value.shelfBooks.size==1 && vm.ui.value.clearingBooks.isEmpty()};compose.onNodeWithTag("shelf-selected-count").assertTextEquals("已选 0 本")

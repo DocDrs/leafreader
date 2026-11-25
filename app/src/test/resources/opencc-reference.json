@@ -1,0 +1,37 @@
+{
+  "reference": "official OpenCC Python native engine 1.1.9 / t2s",
+  "upstream_commit": "556ed22496d650bd0b13b6c163be9814637970ae",
+  "dictionary_rows": 4391,
+  "dictionary_conversion_sha256": "a9da37907d265f249f6fc92f3ca9ee3c474b0ea3bc9a5e5463c52b467d2c4539",
+  "self_passage": "第一章　風與書\n\n　　乾隆年間，他說：「頭髮乾乾淨淨，發展要腳踏實地。」一目瞭然的二噁英資料，還有陽光。\n\n　　Already simplified 简体。English Ａ + B，かな、한글、😀與𝄞。\n\n",
+  "long_repeat": 1200,
+  "long_conversion_sha256": "2c9748bbb824774fbe69dff3dd5be0b6d86452b24cdf537449e063ea7a83b02c",
+  "cases": [
+    {
+      "source": "乾隆乾坤乾乾淨淨，頭髮發展，二噁英",
+      "expected": "乾隆乾坤干干净净，头发发展，二𫫇英"
+    },
+    {
+      "source": "紅樓夢與補紅樓夢",
+      "expected": "红楼梦与补红楼梦"
+    },
+    {
+      "source": "自寫書名・第一章：書與風",
+      "expected": "自写书名・第一章：书与风"
+    },
+    {
+      "source": "English Ａ + B，かな、한글、😀與𝄞。",
+      "expected": "English Ａ + B，かな、한글、😀与𝄞。"
+    },
+    {
+      "source": "第一章　風與書\n\n　　乾隆年間，他說：「頭髮乾乾淨淨，發展要腳踏實地。」一目瞭然的二噁英資料，還有陽光。\n\n　　Already simplified 简体。English Ａ + B，かな、한글、😀與𝄞。\n\n",
+      "expected": "第一章　风与书\n\n　　乾隆年间，他说：「头发干干净净，发展要脚踏实地。」一目了然的二𫫇英资料，还有阳光。\n\n　　Already simplified 简体。English Ａ + B，かな、한글、😀与𝄞。\n\n"
+    }
+  ],
+  "search_variants": {
+    "source": "红楼梦",
+    "traditional": "紅樓夢"
+  },
+  "search_pipeline_sample_stride": 61,
+  "search_pipeline_sha256": "6f1c5c17290d84649113ec468d0c62d62276587f757d2bc514104ab8acc89911"
+}

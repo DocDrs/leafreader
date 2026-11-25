@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,34 +40,51 @@ internal fun Modifier.softGlass(shape:Shape,c:GlassColors,paintBackground:Boolea
  .clip(shape).then(if(paintBackground)Modifier.background(glassBrush(c))else Modifier)
  .border(1.dp,Brush.linearGradient(listOf(Color.White.copy(alpha=if(c.dark).30f else .96f),Color.White.copy(alpha=.08f),Color.White.copy(alpha=if(c.dark).14f else .65f))),shape)
 
-@Composable internal fun HomeBackdrop(modifier:Modifier=Modifier,content:@Composable BoxScope.()->Unit) {
+@Composable internal fun HomeBackdrop(modifier:Modifier=Modifier,backdrop:NavBackdrop?=null,content:@Composable BoxScope.()->Unit) {
  val c=glassColors()
- Box(modifier.background(Brush.verticalGradient(listOf(c.canvas,if(c.dark)Color(0xFF1C2A24)else Color(0xFFEBF0E7),c.canvas)))) {
+ Box(modifier) {
+  Box(Modifier.matchParentSize().captureGlassBackdrop(backdrop).background(Brush.verticalGradient(listOf(if(c.dark)c.canvas else Color(0xFFF7F5F0),if(c.dark)Color(0xFF1C2A24)else Color(0xFFF1EEE8),if(c.dark)c.canvas else Color(0xFFF7F5F0))))) {
   Canvas(Modifier.matchParentSize()) {
-   drawRect(Brush.radialGradient(listOf((if(c.dark)Color(0xFF668573)else Color(0xFFB4C7AC)).copy(alpha=.15f),Color.Transparent),center=Offset(size.width*1.05f,size.height*.04f),radius=size.width*1.2f))
+   drawRect(Brush.radialGradient(listOf((if(c.dark)Color(0xFF668573)else Color(0xFFD2C6B4)).copy(alpha=if(c.dark).15f else .08f),Color.Transparent),center=Offset(size.width*1.05f,size.height*.04f),radius=size.width*1.2f))
    drawRect(Brush.radialGradient(listOf(Color(0xFFC7AB95).copy(alpha=.08f),Color.Transparent),center=Offset(-size.width*.2f,size.height*.75f),radius=size.width*.9f))
+  }
   }
   content()
  }
 }
 
 @Composable internal fun FloatingHomeNav(selected:String,select:(String)->Unit,backdrop:NavBackdrop?=null,frameSignal:()->Long={0L}) {
- val c=glassColors();val shape=RoundedCornerShape(30.dp)
- Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal+WindowInsetsSides.Bottom))
-  .padding(horizontal=22.dp,vertical=10.dp),contentAlignment=Alignment.Center) {
-  Row(Modifier.widthIn(max=440.dp).fillMaxWidth().softGlass(shape,c,paintBackground=backdrop==null).refractNav(backdrop,c,frameSignal).padding(5.dp).testTag("floating-home-nav"),verticalAlignment=Alignment.CenterVertically) {
-   listOf("shelf" to "书架","find" to "找书","settings" to "设置").forEachIndexed { i,(id,label)->
-    val active=selected==id
-    Column(Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(if(active)c.ink.copy(alpha=if(c.dark).12f else .07f)else Color.Transparent)
-     .selectable(active,role=Role.Tab,onClick={select(id)}).heightIn(min=58.dp).padding(vertical=7.dp).testTag("tab-$id"),
-     horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-      NavGlyph(i,if(active)c.accent else c.muted)
-      Text(label,color=if(active)c.accent else c.muted,fontSize=11.sp,lineHeight=16.sp,fontWeight=if(active)FontWeight.Bold else FontWeight.Medium,modifier=Modifier.padding(top=3.dp))
+ val c=glassColors();val readability=remember{GlassReadability()}
+ val systemBottom=WindowInsets.navigationBars.getBottom(androidx.compose.ui.platform.LocalDensity.current)
+ CompositionLocalProvider(LocalGlassReadability provides readability) {
+  Box(Modifier.fillMaxWidth().softGlass(RectangleShape,c,paintBackground=backdrop==null)
+   .refractNav(backdrop,c,frameSignal,cornerDp=0f,clear=true,readability=readability,fluid=true,protectBottomPx=systemBottom)
+   .testTag("floating-home-nav")) {
+   HomeNavTargets(selected,select,c,Modifier.fillMaxWidth()
+    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal+WindowInsetsSides.Bottom))
+    .padding(horizontal=8.dp,vertical=5.dp))
+  }
+ }
+}
+
+/** Same stationary targets for runtime glass and static fallback. The material never transforms these. */
+@Composable internal fun HomeNavTargets(selected:String,select:(String)->Unit,c:GlassColors,modifier:Modifier) {
+ Row(modifier,verticalAlignment=Alignment.CenterVertically) {
+  listOf("shelf" to "书架","find" to "找书","settings" to "设置").forEachIndexed { i,(id,label)->
+   val active=selected==id
+   Column(Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(if(active)c.ink.copy(alpha=if(c.dark).12f else .07f)else Color.Transparent)
+    .selectable(active,role=Role.Tab,onClick={select(id)}).heightIn(min=58.dp).padding(vertical=7.dp).testTag("tab-$id"),
+    horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+    Column(Modifier.glassReadable(),horizontalAlignment=Alignment.CenterHorizontally) {
+     NavGlyph(i,c.ink)
+     DisplayText(label,color=c.ink,fontSize=11.sp,lineHeight=16.sp,fontWeight=if(active)FontWeight.Bold else FontWeight.Medium,modifier=Modifier.padding(top=3.dp))
     }
    }
   }
  }
 }
+@Composable internal fun HomeSearchGlyph()=NavGlyph(1,LocalContentColor.current)
+
 @Composable private fun NavGlyph(index:Int,color:Color) {
  Canvas(Modifier.size(22.dp)) {
   val u=size.width;val s=Stroke(1.65.dp.toPx(),cap=StrokeCap.Round,join=StrokeJoin.Round)
@@ -81,16 +98,17 @@ internal fun Modifier.softGlass(shape:Shape,c:GlassColors,paintBackground:Boolea
 }
 
 @Composable internal fun GlassRemoveConfirmation(enabled:Boolean,dismiss:()->Unit,remove:()->Unit) {
- val c=glassColors()
+ val c=glassColors();val backdrop=LocalGlassBackdrop.current
  Dialog(onDismissRequest=dismiss) {
-  Column(Modifier.widthIn(max=360.dp).fillMaxWidth().softGlass(RoundedCornerShape(28.dp),c)
+  Column(Modifier.widthIn(max=360.dp).fillMaxWidth().softGlass(RoundedCornerShape(28.dp),c,paintBackground=backdrop==null)
+   .refractNav(backdrop,c,backdrop?.frameSignal?:{0L},cornerDp=28f)
    .testTag("remove-shelf-confirm").padding(horizontal=24.dp).padding(top=24.dp,bottom=14.dp)) {
-   Text("移出书架？",color=c.ink,fontSize=22.sp,lineHeight=29.sp,fontWeight=FontWeight.SemiBold)
+   DisplayText("移出书架？",color=c.ink,fontSize=22.sp,lineHeight=29.sp,fontWeight=FontWeight.SemiBold)
    Row(Modifier.fillMaxWidth().padding(top=16.dp),horizontalArrangement=Arrangement.End,verticalAlignment=Alignment.CenterVertically) {
-    TextButton(onClick=dismiss,colors=ButtonDefaults.textButtonColors(contentColor=c.muted),modifier=Modifier.heightIn(min=48.dp)){Text("取消")}
+    TextButton(onClick=dismiss,colors=ButtonDefaults.textButtonColors(contentColor=c.muted),modifier=Modifier.heightIn(min=48.dp)){DisplayText("取消")}
     Spacer(Modifier.width(8.dp))
     TextButton(onClick=remove,enabled=enabled,colors=ButtonDefaults.textButtonColors(contentColor=c.accent),
-     modifier=Modifier.heightIn(min=48.dp).clip(RoundedCornerShape(18.dp)).background(c.accent.copy(alpha=.09f)).testTag("confirm-remove-shelf")){Text("移除",fontWeight=FontWeight.SemiBold)}
+     modifier=Modifier.heightIn(min=48.dp).clip(RoundedCornerShape(18.dp)).background(c.accent.copy(alpha=.09f)).testTag("confirm-remove-shelf")){DisplayText("移除",fontWeight=FontWeight.SemiBold)}
    }
   }
  }

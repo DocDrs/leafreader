@@ -54,7 +54,7 @@ class Nav1100UiTest {
  @Test fun scrollingReallyContinuesUnderTheBarWhileLastBookAndInsetsStayUsable() {
   local();compose.runOnIdle{androidx.core.view.ViewCompat.dispatchApplyWindowInsets(owner(compose.activity.window.decorView)!!,androidx.core.view.WindowInsetsCompat.Builder().setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(),androidx.core.graphics.Insets.of(0,0,0,48)).setVisible(androidx.core.view.WindowInsetsCompat.Type.navigationBars(),true).build())};compose.waitForIdle()
   compose.onNodeWithTag("floating-home-nav").assert(SemanticsMatcher.expectValue(NavRenderBackend,"static"))
-  val bar=compose.onNodeWithTag("floating-home-nav").fetchSemanticsNode().boundsInRoot;assertTrue(bar.bottom<=compose.activity.window.decorView.height-48)
+  val bar=compose.onNodeWithTag("floating-home-nav").fetchSemanticsNode().boundsInRoot;assertEquals(compose.activity.window.decorView.height.toFloat(),bar.bottom,1f);assertTrue(compose.onNodeWithTag("tab-shelf").fetchSemanticsNode().boundsInRoot.bottom<=bar.bottom-48)
   val rows=compose.onAllNodes(SemanticsMatcher("book rows"){it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("shelf-book-simple:")==true}).fetchSemanticsNodes()
   assertTrue("Use real content under the lens, not only a stationary background",rows.any{it.boundsInRoot.bottom>bar.top && it.boundsInRoot.top<bar.bottom})
   capture("fallback-before-scroll",compose.activity.window.decorView)
@@ -81,4 +81,27 @@ class Nav1100UiTest {
   local(true,1.6f);compose.onNodeWithTag("floating-home-nav").assert(SemanticsMatcher.expectValue(NavRenderBackend,"static"));for(t in listOf("shelf","find","settings")){val b=compose.onNodeWithTag("tab-$t").assertIsDisplayed().fetchSemanticsNode().boundsInRoot;assertTrue(b.height>=48*compose.activity.resources.displayMetrics.density)}
   capture("fallback-dark-large",compose.activity.window.decorView);compose.onNodeWithTag("shelf-book-simple:1").performTouchInput{longClick()};compose.onNodeWithTag("remove-book-simple:1").performScrollTo().assertIsDisplayed();compose.onNodeWithText("关闭").performClick();assertEquals(30,vm.ui.value.shelfBooks.size)
  }
+ @Test fun clearSurfaceReadabilityFootprintsStayLocalAndAccessibleAtLargeFont() {
+  local(false,1.6f)
+  val surface=compose.onNodeWithTag("floating-home-nav").fetchSemanticsNode()
+  val labels=surface.config[GlassReadableRegions];assertEquals(3,labels.size)
+  assertTrue(labels.sumOf{(it.width*it.height).toDouble()}<surface.boundsInRoot.width*surface.boundsInRoot.height*.6)
+  for(t in listOf("shelf","find","settings"))compose.onNodeWithTag("tab-$t").assertIsDisplayed()
+  compose.onNodeWithTag("shelf-book-simple:1").performTouchInput{longClick()}
+  val menu=compose.onNodeWithTag("book-actions-glass").fetchSemanticsNode();assertTrue(menu.config[GlassReadableRegions].size>=3)
+  compose.onNodeWithText("关闭").performClick();assertEquals(30,vm.ui.value.shelfBooks.size)
+ }
+ @Test fun realTouchScrollSamplesReportStartReverseAndStopWithoutChangingClickTargets() {
+  local();val tracker=GlassMotionTracker()
+  fun sample()=compose.onNodeWithTag("shelf-list").fetchSemanticsNode().config[GlassMotionObservation]
+  tracker.delta(sample())
+  compose.onNodeWithTag("shelf-list").performTouchInput{down(androidx.compose.ui.geometry.Offset(width*.5f,height*.75f));moveTo(androidx.compose.ui.geometry.Offset(width*.5f,height*.68f),30);moveTo(androidx.compose.ui.geometry.Offset(width*.5f,height*.40f),80)}
+  val forward=sample();assertTrue(forward.moving);assertTrue(tracker.delta(forward)>0)
+  compose.onNodeWithTag("shelf-list").performTouchInput{moveTo(androidx.compose.ui.geometry.Offset(width*.5f,height*.58f),80)}
+  val reverse=sample();assertTrue(reverse.moving);assertTrue(tracker.delta(reverse)<0)
+  compose.onNodeWithTag("shelf-list").performTouchInput{up()};compose.waitForIdle()
+  compose.waitUntil(15000){!sample().moving};assertEquals(0f,tracker.delta(sample()),0f)
+  compose.onNodeWithTag("tab-find").performClick();compose.onNodeWithTag("tab-find").assertIsSelected()
+ }
+
 }

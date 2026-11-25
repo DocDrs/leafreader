@@ -135,7 +135,7 @@ class Patch112SyncTest {
  @Test fun successfulNewAddRetainsAutomaticWifiQueueWithoutDuplicatingOrIgnoringDisabledPreference()=runTest {
   Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler));try {
    val h=setup();h.st.hideFromShelf(setOf(h.book.id));h.w.members.remove(h.book.id);h.downloads.setAutomaticWifi(true);h.w.network.wifi=false
-   h.rt.enqueue(h.c,h.book,true);state(h,setOf("DONE"));val r=h.downloads.request(h.downloads.key(h.book.sourceId,h.book.id))!!;assertTrue(r.automatic);assertFalse(r.allowMetered);assertEquals(h.book.sourceId,r.owner);assertEquals("等待 Wi-Fi",r.message)
+   h.rt.enqueue(h.c,h.book,true);state(h,setOf("DONE"));val r=h.downloads.request(h.downloads.key(h.book.sourceId,h.book.id))!!;assertTrue(r.automatic);assertFalse(r.allowMetered);assertEquals(h.book.sourceId,r.owner);assertEquals("等待不计费 Wi-Fi",r.message)
    h.rt.onLogin(h.c);assertEquals(r.nonce,h.downloads.request(r.key)!!.nonce);assertEquals(31,h.st.position(h.book.id)!!.offset)
    val other=h.book.copy(id="public:2");h.downloads.setAutomaticWifi(false);h.rt.enqueue(h.c,other,true)
    withContext(Dispatchers.IO){withTimeout(15000){h.rt.revision.first{h.rt.intents.get(other.sourceId,other.id)?.state=="DONE"}}};assertNull(h.downloads.request(h.downloads.key(other.sourceId,other.id)))

@@ -36,12 +36,12 @@ class Patch105Test {
    val dir=File(cacheRoot(owner),sha("public:2".toByteArray())+"/"+sha(w.version.toByteArray()));val content=File(dir,sha("a".toByteArray())+".bin");content.writeBytes(ByteArray(content.length().toInt()))
    val index=File(dir,"index.json");val before=index.readBytes();val calls=w.calls.size
    val vm=ReaderViewModel(app,connectionGate=gate(w),sessionVault=vault,offlineRuntime=runtime,linkBookHubShelf=false);vm.ui.first{!it.shelfLoading}
-   val usage=vm.offlineUsage();assertTrue(usage.available);assertTrue(usage.books.isEmpty());assertTrue(usage.bytesByBook.isEmpty());assertEquals(cacheRoot(owner).walkTopDown().filter{it.isFile}.sumOf{it.length()},usage.totalBytes)
+   val usage=vm.offlineUsage();assertTrue(usage.available);assertTrue(usage.books.isEmpty());assertTrue(usage.bytesByBook.isEmpty());assertEquals(GlobalOfflineUsage.bytes(GlobalOfflineUsage.roots(app)),usage.totalBytes)
    val hidden=vm.hiddenCopiesSnapshot();assertEquals(listOf(owner+"|public:2"),hidden.books.map{it.key});assertArrayEquals(before,index.readBytes());assertEquals(calls,w.calls.size)
    assertFalse(cache.status("public:2",verify=true).complete) // The deliberately damaged bytes really fail integrity.
    w.accessStatus=401;try{vm.chapterList(book("public:1",owner),true);fail()}catch(_:SourceProblem){}
-   assertFalse(vm.offlineUsage().available);assertFalse(vm.hiddenCopiesSnapshot().available);assertTrue(vm.hiddenCopiesSnapshot().books.isEmpty())
-   vm.signOut();assertFalse(vm.hiddenCopiesSnapshot().available);assertFalse(vm.offlineUsage().available)
+   assertTrue(vm.offlineUsage().available);assertTrue(vm.offlineUsage().books.isEmpty());assertFalse(vm.hiddenCopiesSnapshot().available);assertTrue(vm.hiddenCopiesSnapshot().books.isEmpty())
+   vm.signOut();assertFalse(vm.hiddenCopiesSnapshot().available);assertTrue(vm.offlineUsage().available)
   }finally{Dispatchers.resetMain()}
  }
  @Test fun hiddenClearIsScopedToEnabledOwnerAndRevisionAndRetainsPositionsAndVisibility()=runTest {

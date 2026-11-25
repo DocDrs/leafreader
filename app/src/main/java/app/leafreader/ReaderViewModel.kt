@@ -33,12 +33,14 @@ data class ReaderState(
     val offset: Int = 0, val revision: Int = 0, val settings: ReaderSettings = ReaderSettings(),
     val findError:String?=null,val loading: Boolean = false, val error: String? = null, val notice: String? = null,
     val shelfRevision: Int = 0, val query: String = "", val nextCursor: String? = null, val hasMore: Boolean = false,
+    val catalogImportErrors:List<LegadoRejectedSource> = emptyList(),val catalogImportedCount:Int=0, val catalogNote:String?=null,val catalogSections:List<CatalogSection> = emptyList(),val catalogCanBack:Boolean=false,val addingCatalog:Boolean=false,val catalogAddError:String?=null,
+    val catalogId:String="bookhub", val catalogLabel:String="BookHub", val publicCatalog:Boolean=false, val catalogBrowsing:Boolean=false,
     val remote: Boolean = false, val sourceLabel: String = "BookHub · 未登录", val connecting: Boolean = false,
     val connectionError: String? = null, val connectionRevision: Int = 0,
     val topTab: String = "shelf", val shelfBooks: List<Book> = emptyList(), val shelfLoading: Boolean = true,
     val shelfError: String? = null, val shelfHasMore: Boolean = false, val findLoading: Boolean = false,
     val chapterLengths: List<Int>? = null, val chaptersComplete: Boolean = false, val graphicId: String? = null,
-    val downloadLabels:Map<String,String> = emptyMap(),val automaticWifi:Boolean=true,val offline:Boolean=false,
+    val downloadLabels:Map<String,String> = emptyMap(),val automaticWifi:Boolean=true,val automaticWifiOnly:Boolean=true,val offline:Boolean=false,
     val shelfManaging:Boolean=false,val shelfSelection:Set<String> = emptySet(),
     val localShelfWarning:String?=null,val retentionNote:String?=null,val progressOrderReliable:Boolean=true,val downloadRevision:Int=0, val shelfKnownComplete:Boolean=false, val canReturnPage:Boolean=false,val clearingBooks:Set<String> = emptySet(),val syncingShelf:Boolean=false,val syncRevision:Int=0,val membershipBusy:Set<String> = emptySet(),val membershipFeedback:String?=null,val membershipRevision:Int=0,val shelfChoicePending:Boolean=false,val shelfDifference:ShelfDifference?=null,val showShelfChoice:Boolean=false,val shelfChoiceBusy:Boolean=false
 )
@@ -48,9 +50,26 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     private var source: BookSource = SignedOutBookSource(),
     private val connectionGate: BookHubConnectionGate = BookHubConnectionGate(),
     private val sessionVault: SessionVault = EncryptedSessionVault(application), private val offlineRuntime:OfflineDownloads?=null,
-    independentSources:List<BookSource> = emptyList(), private val linkBookHubShelf:Boolean=true, private val automaticShelfSync:ShelfSyncRuntime?=null, private val clock: () -> Long = { System.currentTimeMillis() }) : AndroidViewModel(application) {
+    independentSources:List<BookSource> = emptyList(), private val linkBookHubShelf:Boolean=true, private val automaticShelfSync:ShelfSyncRuntime?=null, private val opdsFactory:(OpdsSubscription)->OpdsSource={OpdsSource(application,it)}, private val legadoFactory:(LegadoDefinition)->LegadoSource={LegadoSource(application,it)}, private val automaticSourceDownloads:AutomaticSourceDownloads?=null, private val clock: () -> Long = { System.currentTimeMillis() }) : AndroidViewModel(application) {
     private val localSource = source
-    private val independent=independentSources.associateBy{it.id}.also{map->require(map.values.all{it.independentOffline && !it.id.startsWith("bookhub-v1-")})}
+    private val globalDownloadPrefs=GlobalDownloadPreferences(application)
+    private val autoSources=automaticSourceDownloads?:AutomaticSourceDownloads.get(application)
+    private val subscriptions=OpdsSubscriptions(application)
+    private val legadoRegistry=LegadoSources(application)
+    private val independent=(independentSources+subscriptions.all().filter{it.retainedRights}.map{opdsFactory(it)}+legadoRegistry.all().map{legadoFactory(it)}).associateBy{it.id}.also{map->require(map.values.all{it.independentOffline && !it.id.startsWith("bookhub-v1-")})}.mapValues{(_,value)->if(value is IndependentBookSource)autoSources.register(value)else value}.toMutableMap()
+    private val catalogPrefs=application.getSharedPreferences("find-source-v1",Application.MODE_PRIVATE)
+    private var selectedCatalog=catalogPrefs.getString("selected","bookhub")?.takeIf{it=="bookhub" || it in independent}?:"bookhub"
+    private fun findSource():BookSource=independent[selectedCatalog]?:source
+    fun publicSources()=independent.values.filterIsInstance<IndependentBookSource>()
+    private fun publicSource(book:Book)=independent[book.sourceId] as? IndependentBookSource
+    private var catalogPath:String?=null
+    private var effectiveFindTerm:String?=null
+    private val catalogHistory=mutableListOf<String?>()
+    private var addCatalogJob:Job?=null
+    private fun catalogName(id:String)=if(id=="bookhub")"BookHub"else (independent[id] as? IndependentBookSource)?.label?:"书源"
+    private val publicDownloads=java.util.concurrent.ConcurrentHashMap<String,Job>()
+    private val publicDownloadTokens=java.util.concurrent.ConcurrentHashMap<String,Any>()
+    private val publicLabels=java.util.concurrent.ConcurrentHashMap<String,String>()
     private val shelfIndex=LocalShelfIndex(application).apply{remember(localSource.id);independent.keys.forEach(::remember)}
     private var activeReadingSource:BookSource?=null
     private val localStore = ReadingStore(application, localSource.id)
@@ -62,7 +81,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     }
     private val retentionPrefs=application.getSharedPreferences("offline-retention-note-v1",Application.MODE_PRIVATE)
     @Volatile private var sessionAvailable = true
-    private val state = MutableStateFlow(ReaderState(settings = initialSettings, shelfBooks = unifiedShelf(),localShelfWarning=shelfIndex.warning,retentionNote=if(retentionPrefs.getBoolean("show",false))OfflineRetention.NOTE else null,automaticWifi=offlineRuntime?.automaticWifi()?:true,offline=offlineRuntime?.connection?.online==false))
+    private val state = MutableStateFlow(ReaderState(catalogId=selectedCatalog,catalogLabel=catalogName(selectedCatalog),publicCatalog=selectedCatalog!="bookhub",settings = initialSettings, shelfBooks = unifiedShelf(),localShelfWarning=shelfIndex.warning,retentionNote=if(retentionPrefs.getBoolean("show",false))OfflineRetention.NOTE else null,automaticWifi=globalDownloadPrefs.enabled(),automaticWifiOnly=globalDownloadPrefs.wifiOnly(),offline=offlineRuntime?.connection?.online==false))
     val ui = state.asStateFlow()
     private val cleanupRuntime by lazy { offlineRuntime?:OfflineDownloads(getApplication(),scheduleJobs=false) }
     private val cleanupJobs=mutableMapOf<String,Job>()
@@ -119,11 +138,11 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
                 refreshShelfOrder()
             }}
         }
-        if(offlineRuntime!=null)viewModelScope.launch {
+        viewModelScope.launch {
             OfflineEvents.revision.collectLatest {
                 delay(100)
                 // Per-book integrity is checked only when its actions are opened, never across the shelf.
-                state.update{it.copy(automaticWifi=offlineRuntime.automaticWifi(),offline=!offlineRuntime.connection.online,downloadRevision=it.downloadRevision+1)}
+                state.update{it.copy(automaticWifi=globalDownloadPrefs.enabled(),automaticWifiOnly=globalDownloadPrefs.wifiOnly(),offline=offlineRuntime?.connection?.online==false,downloadRevision=it.downloadRevision+1)}
             }
         }
     }
@@ -161,8 +180,8 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         }
         if(automaticShelfSync==null)offlineRuntime?.activate(next)
         serverPrefs.edit().putString("origin", next.origin.value).apply()
-        state.value = ReaderState(settings = state.value.settings, clearingBooks=state.value.clearingBooks,membershipBusy=state.value.membershipBusy, remote = true, sourceLabel = "BookHub · 已连接",shelfChoicePending=linkBookHubShelf && store.shelfChoicePending(),
-            topTab = tab, shelfBooks = combinedShelf(),localShelfWarning=shelfIndex.warning, connectionRevision = state.value.connectionRevision + 1,automaticWifi=offlineRuntime?.automaticWifi()?:true,offline=offlineRuntime?.connection?.online==false)
+        state.value = ReaderState(catalogId=selectedCatalog,catalogLabel=catalogName(selectedCatalog),publicCatalog=selectedCatalog!="bookhub",settings = state.value.settings, clearingBooks=state.value.clearingBooks,membershipBusy=state.value.membershipBusy, remote = true, sourceLabel = "BookHub · 已连接",shelfChoicePending=linkBookHubShelf && store.shelfChoicePending(),
+            topTab = tab, shelfBooks = combinedShelf(),localShelfWarning=shelfIndex.warning, connectionRevision = state.value.connectionRevision + 1,automaticWifi=globalDownloadPrefs.enabled(),automaticWifiOnly=globalDownloadPrefs.wifiOnly(),offline=offlineRuntime?.connection?.online==false)
         if (persist) next.snapshot()?.let { next.onSessionChanged?.invoke(it) }
         if(persist && automaticShelfSync!=null) {
             val current=source;state.update{it.copy(shelfLoading=true)}
@@ -193,6 +212,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     }
     fun positionOf(book: Book) = storeFor(book).position(book.id)
     suspend fun shelfCover(book:Book):android.graphics.Bitmap? {
+        publicSource(book)?.let{return it.thumbnail(book.id)}
         if(book.format!="EPUB")return null
         val current=source as? BookHubSource
         if(current==null || book.sourceId!=current.id || !sessionAvailable) {
@@ -218,7 +238,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         }
         return readingSourceFor(book).chapters(book.id)
     }
-    fun canAddBook(book:Book):Boolean = !membershipBusy(book) && (isOnShelf(book) || source !is BookHubSource || state.value.shelfKnownComplete || book.id in storeFor(book).allHiddenShelfIds())
+    fun canAddBook(book:Book):Boolean = !membershipBusy(book) && (isOnShelf(book) || independent.containsKey(book.sourceId) || source !is BookHubSource || state.value.shelfKnownComplete || book.id in storeFor(book).allHiddenShelfIds())
 
     suspend fun chapterList(bookId: String) = chapterList(Book(bookId, "", "", "", "", 0, 0))
     private fun unifiedShelf():List<Book> = shelfIndex.books().sortedWith(compareByDescending<Book>{storeFor(it).position(it.id)!=null || storeFor(it).enteredReadOnly(it.id)>0}
@@ -230,6 +250,43 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         if(active?.sourceId==owner && items.any{it.id==active.id && it.readAllowed==false})state.update{it.copy(loading=false,error="本书读取授权已被明确拒绝；副本和进度保留。可主动刷新目录核实权限。\n诊断：BH_FORBIDDEN",canReturnPage=false)}
     }
     private fun requireSession() { if (source.id != localSource.id && !sessionAvailable) throw SourceProblem(FailureKind.AUTH, "请重新登录 BookHub；本机书架和进度已保留") }
+    fun selectCatalog(id:String) {
+        if(id!="bookhub" && id !in independent || id==selectedCatalog)return
+        catalogPath=null;catalogHistory.clear();clearSearch();selectedCatalog=id;catalogPrefs.edit().putString("selected",id).apply()
+        state.update{it.copy(catalogId=id,catalogLabel=catalogName(id),publicCatalog=id!="bookhub",catalogBrowsing=false)}
+    }
+    fun browsePublic(){if(state.value.publicCatalog){catalogPath=null;catalogHistory.clear();searchCatalog("",true)}}
+    fun navigateCatalog(section:CatalogSection){if(!state.value.publicCatalog)return;catalogHistory+=catalogPath;catalogPath=section.href;searchCatalog("",true)}
+    fun catalogBack(){if(catalogHistory.isEmpty())return;catalogPath=catalogHistory.removeAt(catalogHistory.lastIndex);searchCatalog("",true)}
+    fun clearCatalogImportResult(){state.update{it.copy(catalogImportErrors=emptyList(),catalogImportedCount=0,catalogAddError=null)}}
+    fun cancelAddCatalog(){addCatalogJob?.cancel();state.update{it.copy(addingCatalog=false,catalogAddError=null,catalogImportErrors=emptyList(),catalogImportedCount=0)}}
+    fun addOpds(name:String,url:String,rights:Boolean,done:()->Unit) {
+        addCatalogJob?.cancel();state.update{it.copy(addingCatalog=true,catalogAddError=null)}
+        addCatalogJob=viewModelScope.launch {try {
+            require(name.trim().length in 1..80 && rights){"请填写名称并确认下载与离线保留权"}
+            val descriptor=OpdsSubscription(name.trim(),CatalogOrigin(url).root.toString(),rights)
+            val provider=opdsFactory(descriptor)
+            provider.verify();coroutineContext.ensureActive()
+            withContext(Dispatchers.IO){check(subscriptions.save(descriptor)){"订阅未能保存"}}
+            independent[provider.id]=autoSources.register(provider);shelfIndex.remember(provider.id);selectCatalog(provider.id)
+            state.update{it.copy(addingCatalog=false,topTab="find",shelfRevision=it.shelfRevision+1)};done()
+        }catch(e:CancellationException){throw e}catch(e:Exception){state.update{it.copy(addingCatalog=false,catalogAddError=if(e is SourceProblem)e.message else e.message?.takeIf{e is IllegalArgumentException}?:"添加失败，请检查地址后重试")}}}
+    }
+    override fun onCleared(){super.onCleared();independent.values.filterIsInstance<IndependentBookSource>().filterNot{autoSources.runningFor(it.id)}.forEach{it.close()}}
+    fun importLegado(json:String,rights:Boolean,done:()->Unit) {
+        addCatalogJob?.cancel();state.update{it.copy(addingCatalog=true,catalogAddError=null,catalogImportErrors=emptyList(),catalogImportedCount=0)}
+        addCatalogJob=viewModelScope.launch {try {
+            val result=withContext(Dispatchers.IO){LegadoRules.review(json,rights)}
+            val definitions=result.accepted
+            if(definitions.isEmpty()){state.update{it.copy(addingCatalog=false,catalogImportErrors=result.rejected,catalogImportedCount=0,catalogAddError=null)};return@launch}
+            val providers=definitions.map(legadoFactory)
+            withContext(Dispatchers.IO){check(legadoRegistry.save(definitions)){"来源未能保存"}}
+            coroutineContext.ensureActive();providers.forEach{independent[it.id]=autoSources.register(it);shelfIndex.remember(it.id)};selectCatalog(providers.first().id)
+            state.update{it.copy(addingCatalog=false,topTab="find",shelfRevision=it.shelfRevision+1,catalogImportErrors=result.rejected,catalogImportedCount=if(result.rejected.isEmpty())0 else providers.size)};if(result.rejected.isEmpty())done()
+        }catch(e:CancellationException){throw e}catch(e:Exception){state.update{it.copy(addingCatalog=false,catalogAddError=if(e is SourceProblem)e.message else "导入失败，请检查 JSON")}}}
+    }
+    fun catalogCanBrowse()=(findSource()as? IndependentBookSource)?.canBrowse!=false
+    suspend fun bookDetails(book:Book)=publicSource(book)?.details(book)?:book
     fun selectTab(tab: String) { if(tab in listOf("shelf","find","settings"))state.update{it.copy(topTab=tab,shelfManaging=it.shelfManaging && tab==it.topTab,shelfSelection=if(tab==it.topTab)it.shelfSelection else emptySet())} }
     fun manageShelf() {state.update{it.copy(shelfManaging=true,shelfSelection=emptySet())}}
     fun endShelfManagement() {state.update{it.copy(shelfManaging=false,shelfSelection=emptySet())}}
@@ -254,12 +311,19 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     private fun addLocalToShelf(owned:Book,remoteConfirmed:Boolean=false,localOverride:Boolean=false):Boolean {
         if(storeFor(owned).cleanupPending(owned.id)) {state.update{it.copy(notice="这本书正在清理，完成后可重新加入。")};return false}
         if(!remoteConfirmed && !canAddBook(owned))return false
-        if(!linkBookHubShelf && owned.sourceId!=localSource.id && (owned.sourceId!=source.id || !sessionAvailable)) return false
+        if(!linkBookHubShelf && owned.sourceId !in independent && owned.sourceId!=localSource.id && (owned.sourceId!=source.id || !sessionAvailable)) return false
         val added=!isOnShelf(owned)
         if(!storeFor(owned).addToShelf(owned,remoteConfirmed,localOverride)){state.update{it.copy(notice="加入书架未能完整保存，请重试；原记录保留。")};return false};
         if(owned.sourceId==source.id && serviceShelf.any{it.id==owned.id}) {serviceShelf=serviceShelf.map{if(it.id==owned.id)owned else it};store.rememberServiceShelf(serviceShelf)}
         membershipEpoch++;refreshShelfOrder()
-        if(added && downloadsAvailable(owned) && offlineRuntime?.automaticWifi()==true) {
+        if(added && globalDownloadPrefs.enabled())publicSource(owned)?.takeIf{it.supportsAutomaticDownload}?.let{provider->
+            val operation=bookOperations[owned.key]?:0L
+            viewModelScope.launch(Dispatchers.IO){try{
+                val queued=autoSources.enqueue(provider,owned){globalDownloadPrefs.enabled()&&(bookOperations[owned.key]?:0L)==operation&&!cleanupPending(owned)&&publicDownloads[owned.key]?.isActive!=true&&isOnShelf(owned)}
+                if(queued&&!autoSources.scheduleJobs)autoSources.request(provider.id,owned.id)?.let{autoSources.execute(it)}
+            }catch(e:CancellationException){throw e}catch(_:Exception){publicLabels[owned.key]="自动下载未能排队，可手动下载";OfflineEvents.changed()}}
+        }
+        if(added && publicSource(owned)==null && downloadsAvailable(owned) && globalDownloadPrefs.enabled() && offlineRuntime?.automaticWifi()==true) {
             val current=source;val generation=sessionGeneration;val operation=bookOperations[owned.key]?:0L
             viewModelScope.launch(Dispatchers.IO) {try {
                 if(source===current && generation==sessionGeneration)offlineRuntime.enqueueIfNeeded(current.id,owned,automatic=true,stillWanted={source===current && generation==sessionGeneration && (bookOperations[owned.key]?:0L)==operation && !storeFor(owned).cleanupPending(owned.id)})
@@ -376,6 +440,10 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         cleanupJobs[book.key]=viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
+                    publicDownloadTokens.remove(book.key);publicDownloads.remove(book.key)?.cancel()
+                    autoSources.cancel(book.sourceId,book.id)
+                    publicSource(book)?.clear(book.id)
+                    publicLabels.remove(book.key)
                     if(Regex("bookhub-v1-[a-f0-9]{32}").matches(book.sourceId))cleanupRuntime.eraseAndCancel(book.sourceId,book.id,token)
                     covers.clear(book.sourceId,book.id)
                 }
@@ -389,6 +457,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     }
     fun cleanupPending(book:Book)=storeFor(book).cleanupPending(book.id)
     suspend fun inspectDownload(book:Book,chapterId:String?=null):OfflineStatus {
+        publicSource(book)?.let{return it.status(book.id)}
         val runtime=offlineRuntime?:return OfflineStatus()
         if(!canManageOffline(book) || cleanupPending(book))return OfflineStatus()
         return withContext(Dispatchers.IO){
@@ -403,20 +472,32 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     suspend fun chapterOfflineStatus(book:Book,chapterId:String):String {
         if(cleanupPending(book))return "正在清理"
         val current=try{sourceFor(book)}catch(_:Exception){return "需原账号授权"}
+        if(current is IndependentBookSource)return current.chapterStatus(book.id,chapterId)
         if(current !is BookHubSource)return "本地内容"
         chapterChecks.acquire()
         try{return current.localChapterStatus(book.id,chapterId)}catch(e:CancellationException){throw e}catch(_:Exception){return "状态不可用"}finally{chapterChecks.release()}
     }
     fun downloadTaskLabel(book:Book):String? {
+        if(publicSource(book)!=null)return publicLabels[book.key]?:autoSources.label(book.sourceId,book.id)
         if(!canManageOffline(book))return null
         val r=offlineRuntime?.request(offlineRuntime.key(book.sourceId,book.id))?:return null
         return when(r.state){"QUEUED"->"已排队 · ${r.message}";"WAITING"->"等待下载 · ${r.message}";"RUNNING"->"下载中 · ${r.message}";"PAUSED"->"已暂停 · ${r.message}";"FAILED"->"下载失败 · ${r.message}";"CANCELLED"->"已取消";else->null}
     }
-    fun canManageOffline(book:Book)=offlineRuntime!=null && Regex("bookhub-v1-[a-f0-9]{32}").matches(book.sourceId) && book.sourceId in shelfIndex.sources()
-    fun downloadsAvailable(book:Book)=offlineRuntime!=null && source is BookHubSource && sessionAvailable && book.format in listOf("TXT","EPUB") && (book.sourceId.isBlank() || book.sourceId==source.id)
+    fun canManageOffline(book:Book)=publicSource(book)!=null || offlineRuntime!=null && Regex("bookhub-v1-[a-f0-9]{32}").matches(book.sourceId) && book.sourceId in shelfIndex.sources()
+    fun sourceCaption(book:Book)=(publicSource(book)?.label?:"书源")+if(publicSource(book)is LegadoSource)" · 基础规则"else" · 公开源"
+    fun isPublicBook(book:Book)=publicSource(book)!=null
+    fun downloadsAvailable(book:Book)=publicSource(book)!=null || offlineRuntime!=null && source is BookHubSource && sessionAvailable && book.format in listOf("TXT","EPUB") && (book.sourceId.isBlank() || book.sourceId==source.id)
     fun downloadLabel(book:Book)=state.value.downloadLabels[tagged(book).key]?:"未下载"
-    fun downloadBusy(book:Book)=canManageOffline(book) && offlineRuntime?.busy(book.sourceId,book.id)==true
+    fun downloadBusy(book:Book)=publicDownloads[book.key]?.isActive==true || (publicSource(book)!=null&&autoSources.busy(book.sourceId,book.id)) || canManageOffline(book) && offlineRuntime?.busy(book.sourceId,book.id)==true
     fun download(book:Book,allowMetered:Boolean=false) {
+        publicSource(book)?.let { provider->
+            if(cleanupPending(book) || publicDownloads[book.key]?.isActive==true || autoSources.busy(book.sourceId,book.id))return
+            autoSources.cancel(book.sourceId,book.id)
+            val token=Any();publicDownloadTokens[book.key]=token
+            publicLabels[book.key]="下载中"
+            publicDownloads[book.key]=viewModelScope.launch {try{provider.download(book.id,allowMetered);if(publicDownloadTokens[book.key]===token)publicLabels.remove(book.key)}catch(e:CancellationException){if(publicDownloadTokens[book.key]===token && !cleanupPending(book))publicLabels[book.key]="已取消";throw e}catch(e:Exception){if(publicDownloadTokens[book.key]===token){publicLabels[book.key]="下载失败";state.update{it.copy(notice=safeError(e))}}}finally{state.update{it.copy(downloadRevision=it.downloadRevision+1)};OfflineEvents.changed()}}
+            state.update{it.copy(downloadRevision=it.downloadRevision+1)};return
+        }
         if(cleanupPending(book)){state.update{it.copy(notice="本书清理尚未完成，请完成清理后再下载。")};return}
         val accepted=try{!cleanupPending(book) && downloadsAvailable(book) && offlineRuntime?.enqueue(source.id,tagged(book),allowMetered)==true}catch(_:Exception){false}
         if(!accepted)
@@ -424,6 +505,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         else state.update{it.copy(downloadRevision=it.downloadRevision+1)}
     }
     fun cancelDownload(book:Book) {
+        if(publicSource(book)!=null){autoSources.cancel(book.sourceId,book.id);publicDownloadTokens.remove(book.key);publicDownloads.remove(book.key)?.cancel();publicLabels[book.key]="已取消";state.update{it.copy(downloadRevision=it.downloadRevision+1)};return}
         if(!canManageOffline(book))return
         val owner=book.sourceId
         viewModelScope.launch(Dispatchers.IO){try{offlineRuntime?.cancel(owner,book.id);state.update{it.copy(downloadRevision=it.downloadRevision+1)}}catch(_:Exception){state.update{it.copy(notice="取消任务未能完整保存，请重试；阅读进度保留。")}}}
@@ -437,18 +519,27 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     fun clearHiddenDownload(book:Book,expectedConnectionRevision:Int) {
         if(hiddenClearAllowed(book,expectedConnectionRevision))beginBookCleanup(book)
     }
-    fun automaticWifi(value:Boolean){offlineRuntime?.setAutomaticWifi(value);state.update{it.copy(automaticWifi=value)}}
+    fun automaticWifiOnly(value:Boolean){
+        if(!globalDownloadPrefs.enabled())return
+        if(globalDownloadPrefs.wifiOnly()==value)return
+        globalDownloadPrefs.setWifiOnly(value)
+        offlineRuntime?.networkPolicyChanged();autoSources.networkPolicyChanged()
+        state.update{it.copy(automaticWifiOnly=value)}
+    }
+    fun automaticWifi(value:Boolean){globalDownloadPrefs.set(value);offlineRuntime?.setAutomaticWifi(value);if(value)autoSources.scheduleMore()else autoSources.cancelAutomatic();state.update{it.copy(automaticWifi=value)}}
     private fun refreshShelfOrder() {
         val shelf=combinedShelf();val keys=shelf.map{it.key}.toSet();val findKeys=knownShelfKeys()
         state.update { it.copy(shelfBooks=shelf,shelfSelection=it.shelfSelection.intersect(keys),localShelfWarning=shelfIndex.warning,books=it.books.filterNot{b->b.key in findKeys},shelfRevision=it.shelfRevision+1) }
     }
     /** Resolve exact current shelf keys, never titles/bare IDs. Queue identity and policy stay in OfflineDownloads. */
     fun downloadSelection(keys: Set<String>, expectedConnectionRevision: Int, allowMetered: Boolean = false) {
+        if(expectedConnectionRevision!=state.value.connectionRevision)return
+        state.value.shelfBooks.filter{it.key in keys && publicSource(it)!=null}.forEach{download(it,allowMetered)}
         val current=source as? BookHubSource?:return
         val runtime=offlineRuntime?:return
         val generation=sessionGeneration
         if(expectedConnectionRevision!=state.value.connectionRevision || !sessionAvailable)return
-        val targets=state.value.shelfBooks.filter{it.key in keys && downloadsAvailable(it)}.distinctBy{it.key}
+        val targets=state.value.shelfBooks.filter{it.key in keys && downloadsAvailable(it) && publicSource(it)==null}.distinctBy{it.key}
         val operations=targets.associate{it.key to (bookOperations[it.key]?:0L)}
         viewModelScope.launch(Dispatchers.IO) {
             var added=0;var existing=0;var failed=0
@@ -470,13 +561,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
 
     /** Settings summary reads file lengths on IO; no manifest parsing or resource SHA validation. */
     suspend fun offlineUsage():OfflineManagementSnapshot = withContext(Dispatchers.IO) {
-        val current=source as? BookHubSource?:return@withContext OfflineManagementSnapshot()
-        val runtime=offlineRuntime?:return@withContext OfflineManagementSnapshot()
-        if(!sessionAvailable)return@withContext OfflineManagementSnapshot()
-        val generation=sessionGeneration
-        val bytes=runtime.cache(current.id).totalDiskBytes()
-        if(source!==current || generation!=sessionGeneration || !sessionAvailable)throw CancellationException()
-        OfflineManagementSnapshot(totalBytes=bytes,available=true)
+        OfflineManagementSnapshot(totalBytes=GlobalOfflineUsage.bytes(GlobalOfflineUsage.roots(getApplication())),available=true)
     }
     suspend fun hiddenCopiesSnapshot():OfflineManagementSnapshot=withContext(Dispatchers.IO) {
         val current=source as? BookHubSource?:return@withContext OfflineManagementSnapshot()
@@ -552,7 +637,7 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         sessionGeneration++; connection?.cancel(); cancelSourceJobs(); sessionVault.clear(); client?.clearSession(); client = null
         source = localSource; store = localStore; sessionAvailable = true
         serviceShelf = store.savedServiceShelf(); freshServiceShelf = emptyList(); shelfCursor = null
-        state.value = ReaderState(settings = state.value.settings, clearingBooks=state.value.clearingBooks,membershipBusy=state.value.membershipBusy, topTab = destination,retentionNote=OfflineRetention.NOTE,notice=OfflineRetention.NOTE, shelfBooks = combinedShelf(),localShelfWarning=shelfIndex.warning, connectionRevision = state.value.connectionRevision + 1,automaticWifi=offlineRuntime?.automaticWifi()?:true,offline=offlineRuntime?.connection?.online==false)
+        state.value = ReaderState(catalogId=selectedCatalog,catalogLabel=catalogName(selectedCatalog),publicCatalog=selectedCatalog!="bookhub",settings = state.value.settings, clearingBooks=state.value.clearingBooks,membershipBusy=state.value.membershipBusy, topTab = destination,retentionNote=OfflineRetention.NOTE,notice=OfflineRetention.NOTE, shelfBooks = combinedShelf(),localShelfWarning=shelfIndex.warning, connectionRevision = state.value.connectionRevision + 1,automaticWifi=globalDownloadPrefs.enabled(),automaticWifiOnly=globalDownloadPrefs.wifiOnly(),offline=offlineRuntime?.connection?.online==false)
         loadShelf()
     }
 
@@ -807,7 +892,8 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     /** Editing/clearing invalidates pending results; blank input never browses the service shelf. */
     fun clearSearch() {
         searchGeneration++;searchJob?.cancel();cursors.clear();findRetry={}
-        state.update{it.copy(query="",books=emptyList(),nextCursor=null,hasMore=false,findLoading=false,findError=null,error=if(it.book==null)null else it.error)}
+        effectiveFindTerm=null
+        state.update{it.copy(catalogNote=null,catalogSections=emptyList(),catalogCanBack=false,catalogBrowsing=false,query="",books=emptyList(),nextCursor=null,hasMore=false,findLoading=false,findError=null,error=if(it.book==null)null else it.error)}
     }
     private fun searchItems(items:List<Book>,owner:String):List<Book> {
         val shelfKeys=knownShelfKeys()
@@ -827,21 +913,36 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
         }
     }
     fun retrySearch()=findRetry.invoke()
-    fun search(query: String) {
+    fun search(query: String){catalogPath=null;catalogHistory.clear();searchCatalog(query,false)}
+    private fun searchCatalog(query:String,browsing:Boolean) {
         clearSearch()
-        val term=query.trim();if(term.isEmpty())return
-        val request=searchGeneration;val generation=sessionGeneration;val current=source
-        state.update { it.copy(findLoading=true,query=term) }
-        findRetry={search(term)}
+        val term=query.trim();if(term.isEmpty() && !browsing)return
+        val request=searchGeneration;val generation=sessionGeneration;val current=findSource()
+        state.update { it.copy(findLoading=true,query=term,catalogBrowsing=browsing,catalogCanBack=catalogHistory.isNotEmpty()) }
+        findRetry={searchCatalog(term,browsing)}
         searchJob=viewModelScope.launch {
             try {
-                requireSession()
-                val page=current.browse(term);coroutineContext.ensureActive()
-                if(request!=searchGeneration || generation!=sessionGeneration || source!==current) { return@launch }
+                if(current===source)requireSession()
+                var actualTerm=term
+                var page=current.browse(term,if(browsing)catalogPath?.let{"nav:$it"}else null);coroutineContext.ensureActive()
+                fun validContext()=request==searchGeneration && generation==sessionGeneration && findSource()===current
+                if(!validContext())return@launch
+                // Keep the source's original result/order/cursor. Only a verified empty success can try spelling variants.
+                if(!browsing && term.isNotBlank() && page.items.isEmpty() && !page.hasMore && page.nextCursor==null && page.sections.isEmpty()) {
+                    val variants=withContext(Dispatchers.Default){app.leafreader.text.ChineseDisplay.searchVariants(getApplication(),term)}
+                    for(variant in variants.drop(1)) {
+                        if(!validContext())return@launch
+                        page=current.browse(variant,null);coroutineContext.ensureActive()
+                        if(!validContext())return@launch
+                        actualTerm=variant
+                        if(page.items.isNotEmpty() || page.hasMore || page.nextCursor!=null || page.sections.isNotEmpty())break
+                    }
+                }
+                effectiveFindTerm=actualTerm
                 applyReadDenial(page.items,current.id)
-                state.update{it.copy(books=searchItems(page.items,current.id),nextCursor=page.nextCursor,hasMore=page.hasMore,findLoading=false)}
+                state.update{it.copy(catalogNote=page.catalogNote,catalogSections=page.sections,books=searchItems(page.items,current.id),nextCursor=page.nextCursor,hasMore=page.hasMore,findLoading=false)}
                 // Membership discovery continues after rendering; uncertain results remain non-addable.
-                try {completeShelfForSearch(current,request,generation)} catch(e:CancellationException){throw e} catch(e:Exception){if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}}
+                try {if(current===source)completeShelfForSearch(current,request,generation)} catch(e:CancellationException){throw e} catch(e:Exception){if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}}
             } catch(e:Exception) {
                 if(e is CancellationException)throw e
                 if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findLoading=false,findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}
@@ -850,21 +951,21 @@ class ReaderViewModel @JvmOverloads constructor(application: Application,
     }
     fun loadMore() {
         val s=state.value;val cursor=s.nextCursor?:return
-        if(s.query.isBlank() || s.findLoading || !s.hasMore) { return }
-        val request=searchGeneration;val generation=sessionGeneration;val current=source
+        if((s.query.isBlank() && !s.catalogBrowsing) || s.findLoading || !s.hasMore) { return }
+        val request=searchGeneration;val generation=sessionGeneration;val current=findSource()
         findRetry={loadMore()};state.update{it.copy(findLoading=true,findError=null,error=if(it.book==null)null else it.error)}
         searchJob=viewModelScope.launch {
             try {
-                requireSession()
-                val page=current.browse(s.query,cursor)
+                if(current===source)requireSession()
+                val page=current.browse(effectiveFindTerm?:s.query,cursor)
                 coroutineContext.ensureActive()
-                if(request!=searchGeneration || generation!=sessionGeneration || source!==current) { return@launch }
+                if(request!=searchGeneration || generation!=sessionGeneration || findSource()!==current) { return@launch }
                 if(page.nextCursor!=null && (page.nextCursor==cursor || page.nextCursor in cursors))throw SourceProblem(FailureKind.PROTOCOL,"服务分页出现循环，请重新搜索")
                 applyReadDenial(page.items,current.id)
                 cursors+=cursor
-                state.update{it.copy(books=searchItems(it.books+page.items,current.id),nextCursor=page.nextCursor,hasMore=page.hasMore,findLoading=false)}
+                state.update{it.copy(catalogNote=page.catalogNote,catalogSections=(it.catalogSections+page.sections).distinctBy{section->section.href},books=searchItems(it.books+page.items,current.id),nextCursor=page.nextCursor,hasMore=page.hasMore,findLoading=false)}
                 // Membership discovery continues after rendering; uncertain results remain non-addable.
-                try {completeShelfForSearch(current,request,generation)} catch(e:CancellationException){throw e} catch(e:Exception){if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}}
+                try {if(current===source)completeShelfForSearch(current,request,generation)} catch(e:CancellationException){throw e} catch(e:Exception){if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}}
             } catch(e:Exception) {
                 if(e is CancellationException)throw e
                 if(request==searchGeneration && generation==sessionGeneration)state.update{it.copy(findLoading=false,findError=safeError(e),error=if(it.book==null)safeError(e) else it.error)}

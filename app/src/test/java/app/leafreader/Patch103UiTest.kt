@@ -39,7 +39,7 @@ class Patch103UiTest {
   compose.waitUntil(10000){compose.onAllNodesWithTag("hidden-copy-empty").fetchSemanticsNodes().isNotEmpty()}
   compose.onNodeWithTag("offline-book-bytes-${b.id}").assertDoesNotExist();compose.onNodeWithText("关闭").performClick();compose.onNodeWithTag("offline-total-bytes").assertTextContains("字节",substring=true)
  }
- @Test fun logoutNoteIsVisibleAfterReopeningWithNoAccountNamesOrSizes() {
+ @Test fun logoutNoteKeepsGlobalBytesAvailableWithoutExposingAccountNames() {
   lateinit var vm:ReaderViewModel
   val vault=MemorySessionVault()
   compose.runOnUiThread{vm=ReaderViewModel(compose.activity.application,sessionVault=vault,linkBookHubShelf=false);vm.selectTab("settings");compose.activity.setContent{MaterialTheme{ReaderApp(vm)}};vm.signOut()}
@@ -48,7 +48,7 @@ class Patch103UiTest {
   compose.runOnUiThread{val cold=ReaderViewModel(compose.activity.application,sessionVault=vault,linkBookHubShelf=false);cold.selectTab("settings");compose.activity.setContent{MaterialTheme{ReaderApp(cold)}}}
   compose.onNodeWithTag("offline-retention-note").assertDoesNotExist();assertEquals(OfflineRetention.NOTE,vm.ui.value.retentionNote)
   compose.onNodeWithTag("offline-management").performScrollTo().assertIsNotEnabled()
-  compose.waitUntil(10000){compose.onAllNodesWithText("登录原账号后可查看离线副本").fetchSemanticsNodes().isNotEmpty()}
-  compose.onNodeWithTag("offline-total-bytes").assertDoesNotExist()
+  compose.waitUntil(10000){compose.onAllNodesWithTag("offline-total-bytes").fetchSemanticsNodes().isNotEmpty()}
+  compose.onNodeWithTag("offline-total-bytes").assertExists()
  }
 }

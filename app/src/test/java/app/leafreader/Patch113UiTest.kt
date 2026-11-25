@@ -107,7 +107,7 @@ class Patch113UiTest {
   remoteSetup();compose.runOnIdle{androidx.core.view.ViewCompat.dispatchApplyWindowInsets(owner(compose.activity.window.decorView)!!,androidx.core.view.WindowInsetsCompat.Builder().setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(),androidx.core.graphics.Insets.of(0,0,0,48)).setVisible(androidx.core.view.WindowInsetsCompat.Type.navigationBars(),true).build())}
   compose.waitForIdle();compose.onNodeWithTag("tab-shelf").assertIsSelected()
   val nav=compose.onNodeWithTag("floating-home-nav").fetchSemanticsNode().boundsInRoot
-  assertTrue(nav.bottom<=compose.activity.window.decorView.height-48f)
+  assertEquals(compose.activity.window.decorView.height.toFloat(),nav.bottom,1f);assertTrue(compose.onNodeWithTag("tab-shelf").fetchSemanticsNode().boundsInRoot.bottom<=nav.bottom-48f)
   for(id in listOf("shelf","find","settings"))assertTrue(compose.onNodeWithTag("tab-$id").fetchSemanticsNode().boundsInRoot.height>=48*compose.activity.resources.displayMetrics.density)
   captureView("shelf-light",compose.activity.window.decorView)
   compose.onNodeWithTag("tab-find").performClick();compose.onNodeWithTag("tab-find").assertIsSelected();compose.onNodeWithTag("find-search-input").assertExists();compose.onNodeWithTag("tab-shelf").performClick()

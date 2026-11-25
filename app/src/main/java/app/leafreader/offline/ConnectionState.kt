@@ -11,7 +11,8 @@ import kotlinx.coroutines.ensureActive
 interface ConnectionState { val online:Boolean; val wifi:Boolean }
 object AlwaysOnline:ConnectionState {override val online=true;override val wifi=true}
 class DownloadPolicy(val allowed:()->Boolean):AbstractCoroutineContextElement(Key) {companion object Key:CoroutineContext.Key<DownloadPolicy>}
-suspend fun checkDownloadPolicy(){coroutineContext.ensureActive();if(coroutineContext[DownloadPolicy]?.allowed?.invoke()==false)throw DownloadStopped()}
+class DownloadIntentGuard(val allowed:()->Boolean):AbstractCoroutineContextElement(Key) {companion object Key:CoroutineContext.Key<DownloadIntentGuard>}
+suspend fun checkDownloadPolicy(){coroutineContext.ensureActive();if(coroutineContext[DownloadPolicy]?.allowed?.invoke()==false || coroutineContext[DownloadIntentGuard]?.allowed?.invoke()==false)throw DownloadStopped()}
 class AndroidConnectionState(context:Context):ConnectionState {
     private val connectivity=context.getSystemService(ConnectivityManager::class.java)
     private fun capabilities()=connectivity?.activeNetwork?.let { connectivity.getNetworkCapabilities(it) }

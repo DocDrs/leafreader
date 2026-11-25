@@ -16,6 +16,8 @@ import androidx.core.view.WindowInsetsCompat
 import android.view.RoundedCorner
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.findViewTreeLifecycleOwner
+import app.leafreader.text.ChineseDisplay
+import app.leafreader.text.TextProjection
 import app.leafreader.data.ReaderSettings
 import app.leafreader.data.ChapterGraphic
 
@@ -44,13 +46,15 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
     private val footer = ReaderFooter()
     internal var footerPlacement: FooterPlacement? = null; private set
     private var document = ""
+    private val converter=ChineseDisplay.converter(context)
+    private var projection=converter.project("")
     private var graphics = emptyList<ChapterGraphic>()
     private var graphicAnchor: String? = null
     private var imageOnly = false
     private data class VisualPage(val data: ChapterLayout? = null, val textPage: TextPage? = null,
-        val base: Int = 0, val graphic: ChapterGraphic? = null) {
-        val start: Int get() = graphic?.offset ?: (base + textPage!!.start)
-        val end: Int get() = graphic?.offset ?: (base + textPage!!.end)
+        val base: Int = 0, val graphic: ChapterGraphic? = null, val projection:TextProjection?=null) {
+        val start: Int get() = graphic?.offset ?: (projection?.sourceOffset(base+textPage!!.start) ?: (base+textPage!!.start))
+        val end: Int get() = graphic?.offset ?: (projection?.sourceOffset(base+textPage!!.end) ?: (base+textPage!!.end))
     }
     private var visualPages = emptyList<VisualPage>()
     private var label = ""
@@ -85,7 +89,7 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
     }
     internal val compactProgressLabel:String get() {
         val page=if(visualPages.isNotEmpty() && geometry!=null)"${pageIndex+1}/$pageCount" else "—/—"
-        return "$page · ${displayedProgress.bookPercent?.let{(if(displayedProgress.bookApproximate)"≈" else "")+"$it%"}?:"—"}"
+        return "$page · ${displayedProgress.compactBookLabel}"
     }
 
     init {
@@ -102,11 +106,12 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
         val reflow = changed || !safe.sameLayoutAs(settings)
         if (changed) {
             document = text
+            projection=converter.project(text,images.map{it.offset})
             anchor = offset.coerceIn(0, (text.length - 1).coerceAtLeast(0))
             revision = version
             graphics=images;graphicAnchor=imageId;imageOnly=onlyImages
         }
-        this.label = title
+        this.label = converter.convert(title)
         sourceNote = provenance
         settings = safe
         paint.color = papers[settings.palette].ink
@@ -145,14 +150,15 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
         paint.textSize = area.fontPx
         paint.color = papers[settings.palette].ink
         paint.typeface = android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL)
-        chapterLayout = NativePaginator.layout(document, paint, area.textWidth, area.textHeight, settings.lineSpacing, area.paragraphGapPx)
-        if(graphics.isEmpty()) visualPages=chapterLayout!!.map.pages.map { VisualPage(chapterLayout,it) }
+        chapterLayout = NativePaginator.layout(projection.text, paint, area.textWidth, area.textHeight, settings.lineSpacing, area.paragraphGapPx)
+        if(graphics.isEmpty()) visualPages=chapterLayout!!.map.pages.map { VisualPage(chapterLayout,it,projection=projection) }
         else {
             val pages=mutableListOf<VisualPage>();var start=0
             fun textPages(end: Int) {
                 if(end>start && !imageOnly && document.substring(start,end).isNotBlank()) {
-                    val layout=NativePaginator.layout(document.substring(start,end),paint,area.textWidth,area.textHeight,settings.lineSpacing,area.paragraphGapPx,start==0)
-                    pages += layout.map.pages.map { VisualPage(layout,it,start) }
+                    val displayStart=projection.displayOffset(start);val displayEnd=projection.displayOffset(end)
+                    val layout=NativePaginator.layout(projection.text.substring(displayStart,displayEnd),paint,area.textWidth,area.textHeight,settings.lineSpacing,area.paragraphGapPx,start==0)
+                    pages += layout.map.pages.map { VisualPage(layout,it,displayStart,projection=projection) }
                 }
                 start=end
             }
@@ -175,7 +181,7 @@ class NativeReaderView @JvmOverloads constructor(context: Context, attrs: Attrib
     }
     private fun updateDescription() {
         contentDescription = visualPages.getOrNull(pageIndex)?.let { p ->
-            "$label，第 ${pageIndex + 1} 页，共 $pageCount 页。" + (p.graphic?.description ?: document.substring(p.start, p.end)) +
+            "$label，第 ${pageIndex + 1} 页，共 $pageCount 页。" + (p.graphic?.description?.let{converter.convert(it)} ?: projection.text.substring(p.base+p.textPage!!.start,p.base+p.textPage!!.end)) +
                 "。${systemStatus.timeLabel}，电量${systemStatus.batteryLabel}"
         } ?: label
     }
